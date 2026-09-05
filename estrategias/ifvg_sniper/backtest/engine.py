@@ -72,20 +72,6 @@ class Params:
     slippage_ticks: float = 0.0
     tick_size: float = 0.25  # MNQ = 0.25 puntos de índice por tick
 
-    # ── Filtro "Judas swing" (ICT) ──────────────────────────────────────
-    # Cada día, en la ventana [judas_window_start_hour, judas_window_end_hour)
-    # (hora de session_tz) se vigila si el precio barre (rompe y cierra de
-    # vuelta adentro) el máximo o mínimo del día anterior. Sólo se habilitan
-    # entradas nuevas de IFVG DESPUÉS de que ese barrido+rechazo ocurrió ese
-    # día. Si nunca ocurre en la ventana, no se opera nada ese día.
-    judas_swing_filter: bool = False
-    judas_window_start_hour: float = 8.0
-    judas_window_end_hour: float = 8.5
-    # si True, además exige que la dirección del trade IFVG coincida con la
-    # reversión esperada del Judas swing (barrido de mínimo -> sólo longs;
-    # barrido de máximo -> sólo shorts, el resto del día)
-    judas_direction_bias: bool = False
-
 
 @dataclass
 class Zone:
@@ -158,52 +144,9 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
 
     entry_price = entry_bar = None
 
-    current_day = None
-    day_high = day_low = np.nan
-    prev_day_high = prev_day_low = None
-    judas_confirmed_today = False
-    judas_bias_today = None  # "long" o "short"
-    judas_swept_high_today = False
-    judas_swept_low_today = False
-
     for i in range(n):
         a = atr[i]
         within = _within_session(ts[i], p)
-
-        # ── 0. Seguimiento de día (ET) + detección de Judas swing ───────────
-        local = ts[i].tz_convert(p.session_tz)
-        day = local.date()
-        if day != current_day:
-            if current_day is not None:
-                prev_day_high, prev_day_low = day_high, day_low
-            current_day = day
-            day_high, day_low = h[i], l[i]
-            judas_confirmed_today = False
-            judas_bias_today = None
-            judas_swept_high_today = False
-            judas_swept_low_today = False
-        else:
-            day_high = max(day_high, h[i])
-            day_low = min(day_low, l[i])
-
-        if p.judas_swing_filter and not judas_confirmed_today and prev_day_high is not None:
-            hour_now = local.hour + local.minute / 60
-            # el BARRIDO (mecha que rompe el máx/mín de ayer) tiene que
-            # ocurrir en la ventana angosta de la apertura...
-            if p.judas_window_start_hour <= hour_now < p.judas_window_end_hour:
-                if h[i] > prev_day_high:
-                    judas_swept_high_today = True
-                if l[i] < prev_day_low:
-                    judas_swept_low_today = True
-            # ...pero el RECHAZO (cierre de vuelta adentro) puede confirmarse
-            # en cualquier vela posterior del mismo día, no sólo dentro de esa
-            # ventana — el rechazo real suele tardar más que el barrido en sí.
-            if judas_swept_high_today and c[i] < prev_day_high:
-                judas_confirmed_today, judas_bias_today = True, "short"
-            elif judas_swept_low_today and c[i] > prev_day_low:
-                judas_confirmed_today, judas_bias_today = True, "long"
-
-        judas_ok = (not p.judas_swing_filter) or judas_confirmed_today
 
         # ── 1. Detectar nuevos FVG (necesita al menos 3 velas) ──────────────
         if i >= 2 and not np.isnan(a):
@@ -318,7 +261,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
             else:  # ventana que cruza medianoche
                 entry_hour_ok = hour_now >= p.entry_start_hour or hour_now < p.entry_end_hour
 
-        if state == "none" and within and entry_hour_ok and judas_ok and not np.isnan(a):
+        if state == "none" and within and entry_hour_ok and not np.isnan(a):
             tol = a * p.touch_tol_atr
             for z in zones:
                 if z.active and z.flipped and not z.used:
@@ -326,10 +269,6 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     if trend_ema is not None:
                         aligned = (c[i] > trend_ema[i]) if is_long else (c[i] < trend_ema[i])
                         if not aligned:
-                            continue
-                    if p.judas_swing_filter and p.judas_direction_bias:
-                        wants_long = judas_bias_today == "long"
-                        if is_long != wants_long:
                             continue
                     limit_price = z.broken_boundary + tol if is_long else z.broken_boundary - tol
                     risk_r = p.sl_atr_mult * a
