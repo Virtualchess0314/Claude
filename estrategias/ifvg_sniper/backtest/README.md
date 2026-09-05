@@ -56,6 +56,18 @@ para operar mañana. Los resultados completos quedan en `optimize_results.csv`.
 4. **`test_avg_bars_held`** — para chequear que seguís lejos del límite de
    "alta frecuencia" de tu cuenta fondeada (ver comentario en el .pine).
 
+## Corridas guardadas
+
+`runs/` guarda snapshots de resultados de barridos ya hechos (a diferencia
+del CSV de precios, que no se versiona por ser dato de mercado con licencia
+de TradingView). La corrida vigente en los inputs del `.pine`:
+
+- `runs/2026-09-05_mnq5m_rr1.5-2.0_risk300.csv` — MNQ 5m, 11.040 velas
+  (12 jul – 4 sep 2026), train 70% / test 30%. Combinación elegida:
+  `minGapAtr=0.75, slAtrMult=0.75, rrTarget=1.5` — PF 1.57 train / 1.49 test,
+  ~50% winrate en ambos (la más consistente del barrido, no la de mayor PF
+  a secas). **Todavía sin comisión ni slippage.**
+
 ## Limitaciones a tener en cuenta
 
 - Si en la misma vela se tocan SL y TP, el motor asume que el SL se ejecutó

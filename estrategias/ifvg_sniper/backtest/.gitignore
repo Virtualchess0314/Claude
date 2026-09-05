@@ -1,3 +1,4 @@
 *.csv
+!runs/*.csv
 data/
 __pycache__/
