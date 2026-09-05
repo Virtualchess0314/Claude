@@ -3,6 +3,24 @@
 Réplica en Python de la lógica exacta de `ifvg_sniper.pine`, para barrer
 parámetros mucho más rápido que probando manualmente en TradingView.
 
+## Comparación entre timeframes (3m / 5m / 10m)
+
+Cada timeframe tiene SU PROPIA config óptima — los filtros no son
+transferibles entre timeframes (ver detalle en `runs/2026-09-05_mnq*m_*.txt`).
+Con comisión real ($3.50 RT) y maxRiskUSD=300 en los tres casos:
+
+| Timeframe | Período | Trades | PF | Winrate | Expectancy | Drawdown | Trades/día |
+|---|---|---|---|---|---|---|---|
+| 3m | 1 mes | 348 | 1.38 | 62% | 0.15R | -$2.015 | ~10.5 |
+| 5m | 2 meses | 95 | **2.09** | 60% | **0.42R** | -$1.623 | ~1.8 |
+| 10m | 2 meses | 84 | **2.12** | **69%** | 0.34R | **-$960** | ~1.6 |
+
+**3m sale claramente peor una vez metidos los costos reales**: PF mucho más
+bajo, más drawdown, y ~6x más operaciones por día — justo lo opuesto a la
+intención original de evitar comportamiento de alta frecuencia. 5m y 10m
+quedan parejos en calidad (10m gana en winrate/drawdown, 5m en expectancy
+y plata neta por ser más activo). El `.pine` sigue con la config de 5m.
+
 ## Por qué esto no trae datos incluidos
 
 Este backtester corre en un entorno sin salida a internet hacia proveedores

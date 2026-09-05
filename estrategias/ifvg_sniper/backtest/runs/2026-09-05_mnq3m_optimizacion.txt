@@ -1,0 +1,53 @@
+IFVG Sniper — optimización en MNQ 3m (export nativo de TradingView)
+=====================================================================
+
+CSV nativo (no derivado): 11.500 velas, 02 ago - 04 sep 2026 (~1 mes,
+menos historial disponible que el export de 5m/10m que cubría 2 meses).
+Train 70% (8049) / test 30% (3451).
+
+Barrido core (min_gap_atr, sl_atr_mult) con rr_target=1.0, YA CON
+comisión real ($3.50 RT) y slippage (1 tick) incluidos desde el
+principio -a diferencia de las rondas de 5m/10m, acá se optimizó
+directamente sobre el resultado neto de costos, porque en timeframes
+más rápidos el número de contratos (y por lo tanto la comisión total)
+es más sensible al parámetro sl_atr_mult.
+
+Mejor combinación consistente: min_gap_atr=0.50, sl_atr_mult=1.00,
+rr_target=1.0 -> train PF 1.30 (61% WR, 230 trades) / test PF 1.58
+(66% WR, 112 trades, expectancy 0.22R). Otras combinaciones con PF de
+test más alto (ej. min_gap=1.0/sl=1.0 con PF test 1.75) tenían muestras
+mucho más chicas (32 trades) y peor PF de train (1.16) — descartadas
+por menos confiables.
+
+Ventana horaria NY 08-16 ET: empeora (como en 10m, no como en 5m) ->
+train PF 1.30->1.47 pero test PF 1.58->1.53, con la mitad de trades.
+No se adoptó.
+
+Buffer de ruptura 0.10 (la mejora que sí ayudó en 5m y 10m): en 3m
+EMPEORA (train PF 1.30->1.37 pero test PF 1.58->1.32). No se adoptó
+tampoco -tercer ejemplo de que los filtros no son transferibles entre
+timeframes.
+
+CONFIG FINAL 3m: min_gap_atr=0.50, sl_atr_mult=1.00, rr_target=1.0,
+clean_break_buffer_atr=0.05 (el default original), SIN ventana
+horaria, maxRiskUSD=300, maxQty=40, comisión $3.50 RT + 1 tick slippage.
+
+Resultado sobre el dataset completo (3m, ~1 mes):
+  348 trades, PF 1.38, winrate 62%, expectancy 0.15R,
+  neto $14.886, drawdown máximo -$2.015, duración promedio ~6.5 min.
+  ~10.5 trades/día en promedio.
+
+COMPARACIÓN ENTRE TIMEFRAMES (misma cuenta, mismo riesgo, misma
+comisión real, cada uno con SU PROPIA config óptima encontrada):
+
+           trades  PF    WR    expectancy  dd máx.   duración  trades/día
+  3m (1 mes)  348  1.38  62%   0.15R       -$2.015   ~6.5 min   ~10.5
+  5m (2 mes)   95  2.09  60%   0.42R       -$1.623   ~8.5 min   ~1.8
+  10m (2 mes)  84  2.12  69%   0.34R         -$960   ~10.6 min  ~1.6
+
+3m sale CLARAMENTE PEOR una vez metidos los costos reales: PF más bajo
+(1.38 vs 2.1+), más drawdown, y sobre todo ~6x más operaciones por día
+-lo que además choca de lleno con la intención original de "evitar
+comportamiento tipo alta frecuencia" que motivó el diseño del SL en
+múltiplos de ATR. A mayor granularidad de vela, más ruido y más
+comisión relativa por operación.
