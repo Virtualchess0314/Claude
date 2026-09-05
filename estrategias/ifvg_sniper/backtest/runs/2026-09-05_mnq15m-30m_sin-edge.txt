@@ -1,0 +1,40 @@
+IFVG Sniper — 15m y 30m (derivados de 5m, jul-sep 2026)
+=====================================================================
+
+15m y 30m se generaron agregando velas de 5m (3 y 6 respectivamente,
+ambos múltiplos exactos — no se necesitó CSV nuevo).
+
+RESULTADO: A DIFERENCIA de 3m/5m/10m, NO se encontró ninguna
+combinación de parámetros con edge consistente train/test en 15m ni
+en 30m, sobre estos mismos 2 meses de datos.
+
+15m — barrido de 48 combinaciones (min_gap_atr, sl_atr_mult, rr_target):
+  La MEJOR por consistencia (min(train_pf, test_pf)) fue min_gap_atr=0.5,
+  sl_atr_mult=1.0, rr_target=2.0 -> train PF 1.44 (52 trades) / test PF
+  0.91 (36 trades, expectancy NEGATIVA -0.03R). Es decir: incluso la
+  "mejor" combinación es levemente perdedora en test. El resto de las
+  combinaciones del top 10 son todas peores en test que en train, varias
+  con PF de test por debajo de 0.7.
+
+30m — barrido de 48 combinaciones: mismo patrón pero más marcado. Ejemplo
+  extremo: min_gap_atr=0.5, sl_atr_mult=1.5, rr_target=1.0 -> train PF
+  10.94 (17 trades) / test PF 0.50 (13 trades) — sobreajuste de manual,
+  con una muestra de apenas 17 operaciones "ganadoras" en train que no
+  generalizan en absoluto. NINGUNA combinación del top 10 tuvo PF de
+  test por encima de 0.63.
+
+¿Por qué? No es un bug del motor (verificado corriendo con parámetros
+default: 15m da 85 trades PF 1.16 total, 30m da 33 trades PF 1.11 total
+sobre el dataset COMPLETO -apenas por encima de breakeven, sin filtrar
+nada). El patrón simplemente ocurre con mucha menos frecuencia a mayor
+tamaño de vela (menos FVGs de forma válida por unidad de tiempo), así
+que en sólo 2 meses de datos quedan 30-90 operaciones totales -muy poco
+para partir en train/test y encontrar algo que generalice de verdad.
+
+CONCLUSIÓN: no se recomienda ninguna configuración para 15m/30m con la
+evidencia actual. Dos caminos posibles:
+  1. Conseguir bastante más historial (6-12+ meses) en estos timeframes
+     para tener una muestra de trades suficiente.
+  2. Aceptar que este patrón mecánico (IFVG + retest) puede no tener
+     edge explotable en velas tan grandes, y quedarse con 5m o 10m que
+     sí mostraron resultados robustos.
