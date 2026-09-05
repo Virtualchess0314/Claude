@@ -1,0 +1,50 @@
+IFVG Sniper — GBP futures completo (6B, CME), 3 minutos
+=====================================================================
+
+Export nativo de TradingView, símbolo CME:6B1! (contrato COMPLETO, no
+el micro M6B — confirmado con el usuario tras una confusión inicial de
+símbolo). 11.243 velas, 02 ago - 04 sep 2026 (~1 mes). Train 70% (7870)
+/ test 30% (3373).
+
+HALLAZGO CRÍTICO DE DIMENSIONAMIENTO (antes de cualquier parámetro):
+6B completo mueve $62.500 por cada 1.00 punto de precio. Con el SL
+típico de esta estrategia (~0.00015 en precio), el riesgo de 1 solo
+contrato es de apenas ~$9.6. Con un objetivo de riesgo fijo de $300
+(el que usábamos en MNQ), la fórmula de sizing pide ~31 contratos —
+imposible de margenar en una cuenta de 50k. El usuario confirmó que su
+cuenta permite un máximo real de 4 contratos completos de 6B.
+
+Con ese tope de 4 (max_qty=4, max_risk_usd puesto muy alto para que el
+tope de contratos sea siempre el límite real, no el riesgo en USD):
+el diseño de "riesgo fijo en dólares" deja de aplicar tal como estaba
+pensado -el riesgo real por operación queda determinado por el ATR de
+cada señal, no por un monto fijo elegido de antemano. Esto es una
+diferencia estructural importante respecto a MNQ, no un bug.
+
+Barrido (min_gap_atr, sl_atr_mult, rr_target), sin ventana horaria:
+  Mejor combinación consistente: min_gap_atr=1.00, sl_atr_mult=0.75,
+  rr_target=1.0 -> train PF 1.90 (65% WR, 221 trades) / test PF 1.77
+  (62% WR, 101 trades, expectancy 0.31R). Grandes muestras, dirección
+  consistente train->test.
+
+Ventana horaria NY 08-16 ET: empeora (igual patrón que en MNQ 10m/15m/
+30m/3m) -> test PF cae de 1.77 a 1.13, mitad de trades. Descartada.
+
+Buffer de ruptura (clean_break_buffer_atr) 0.05 vs 0.10: SIN EFECTO,
+resultados idénticos. No importa para este instrumento/timeframe.
+
+CONFIG FINAL: min_gap_atr=1.00, sl_atr_mult=0.75, rr_target=1.0, sin
+ventana horaria, max_qty=4 (tope real de la cuenta), SIN comisión
+todavía (pendiente confirmar la tarifa real de 6B en Tradovate -no es
+la misma que la de MNQ, contrato completamente distinto).
+
+Resultado sobre el dataset completo (sin comisión):
+  334 trades, PF 1.95, winrate 65%, expectancy 0.34R,
+  neto $4.140 (en ~1 mes), drawdown máximo -$244,
+  duración promedio ~2.4 min (~0.81 velas de 3m) -rápido, cerca del
+  terreno de alta frecuencia, similar a lo visto en MNQ 3m con R:R 1:1.
+
+PENDIENTE:
+  1. Comisión real de 6B completo en Tradovate/Tradeify (round-turn).
+  2. Export de 5m con historial largo (2 meses, como el de MNQ) para
+     poder derivar y probar 10m/15m/30m de la misma manera.

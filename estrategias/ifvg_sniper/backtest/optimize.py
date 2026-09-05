@@ -60,6 +60,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     # fijos (gestión de riesgo / cuenta — normalmente no se barren)
     ap.add_argument("--max-risk-usd", type=float, default=300.0)
     ap.add_argument("--point-value-usd", type=float, default=2.0)
+    ap.add_argument("--max-qty", type=int, default=40)
+    ap.add_argument("--commission-round-turn-usd", type=float, default=0.0)
+    ap.add_argument("--slippage-ticks", type=float, default=0.0)
+    ap.add_argument("--tick-size", type=float, default=0.25)
     ap.add_argument("--atr-len", type=int, default=14)
 
     # ventana horaria de entrada — validada en la ronda anterior (sesión NY),
@@ -94,6 +98,10 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
             min_range_atr=min_range_atr,
             max_risk_usd=args.max_risk_usd,
             point_value_usd=args.point_value_usd,
+            max_qty=args.max_qty,
+            commission_round_turn_usd=args.commission_round_turn_usd,
+            slippage_ticks=args.slippage_ticks,
+            tick_size=args.tick_size,
             atr_len=args.atr_len,
             max_ifvg_age=max_ifvg_age,
             clean_break_buffer_atr=clean_break_buffer_atr,
