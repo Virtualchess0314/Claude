@@ -104,6 +104,12 @@ class Params:
     scale_in_trigger_frac: Optional[float] = None
     scale_in_add_qty: int = 1
 
+    # Segunda etapa opcional: si sigue cayendo más allá de scale_in_trigger_frac,
+    # agrega OTRO contrato al llegar a scale_in_2_trigger_frac. Independiente
+    # de la primera etapa (puede usarse sola o encadenada con la anterior).
+    scale_in_2_trigger_frac: Optional[float] = None
+    scale_in_2_add_qty: int = 1
+
     # Opuesto: agregar contratos cuando el precio avanza a favor (hacia el
     # TP), no cuando retrocede hacia el SL. El contrato extra entra más
     # cerca del TP (peor R:R individual que el original). None = desactivado.
@@ -179,7 +185,11 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     best_since_entry = np.nan   # high más alto (long) / low más bajo (short) desde que abrió
     moved_to_be = False
     scaled_in = False
+    scaled_in_2 = False
     scaled_in_fav = False
+    orig_entry_price = np.nan  # entrada/riesgo/recompensa ORIGINALES (fijos,
+    orig_risk_dist = np.nan    # sin importar cuántas veces se sumó contrato)
+    orig_reward_dist = np.nan
 
     trades = []
     orders_placed = 0
@@ -238,7 +248,11 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     best_since_entry = h[i]
                     moved_to_be = False
                     scaled_in = False
+                    scaled_in_2 = False
                     scaled_in_fav = False
+                    orig_entry_price = entry_price
+                    orig_risk_dist = abs(entry_price - pending_sl)
+                    orig_reward_dist = abs(pending_tp - entry_price)
             else:
                 if h[i] >= pending_limit:
                     entry_price = max(pending_limit, o[i]) if o[i] >= pending_limit else pending_limit
@@ -249,6 +263,12 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     best_since_entry = l[i]
                     moved_to_be = False
                     scaled_in = False
+                    scaled_in_2 = False
+                    scaled_in_fav = False
+                    orig_entry_price = entry_price
+                    orig_risk_dist = abs(entry_price - pending_sl)
+                    orig_reward_dist = abs(pending_tp - entry_price)
+                    scaled_in_2 = False
                     scaled_in_fav = False
 
             if state == "waiting" and (not pending_zone.active or not within):
@@ -276,14 +296,20 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         pending_sl = new_sl
                     moved_to_be = True
 
+            # Los % de scale-in siempre se miden contra el riesgo/recompensa
+            # ORIGINALES (orig_risk_dist/orig_reward_dist, fijos desde el
+            # llenado) — no contra el precio promedio ya mezclado por una
+            # etapa anterior, para que "25%"/"50%" signifiquen siempre lo
+            # mismo sin importar cuántos contratos ya se sumaron.
+            progressed_adverse = abs(worst_since_entry - orig_entry_price)
+            progressed_fav = abs(best_since_entry - orig_entry_price)
+
             if p.scale_in_trigger_frac is not None and not scaled_in:
-                risk_dist_sofar = abs(entry_price - pending_sl)
-                progressed_adverse = abs(worst_since_entry - entry_price)
-                if risk_dist_sofar > 0 and progressed_adverse / risk_dist_sofar >= p.scale_in_trigger_frac:
+                if orig_risk_dist > 0 and progressed_adverse / orig_risk_dist >= p.scale_in_trigger_frac:
                     add_price = (
-                        entry_price - p.scale_in_trigger_frac * risk_dist_sofar
+                        orig_entry_price - p.scale_in_trigger_frac * orig_risk_dist
                         if pending_is_long
-                        else entry_price + p.scale_in_trigger_frac * risk_dist_sofar
+                        else orig_entry_price + p.scale_in_trigger_frac * orig_risk_dist
                     )
                     add_qty = p.scale_in_add_qty
                     new_total_qty = pending_qty + add_qty
@@ -291,14 +317,25 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     pending_qty = new_total_qty
                     scaled_in = True
 
-            if p.scale_in_fav_trigger_frac is not None and not scaled_in_fav:
-                reward_dist_sofar = abs(pending_tp - entry_price)
-                progressed_fav = abs(best_since_entry - entry_price)
-                if reward_dist_sofar > 0 and progressed_fav / reward_dist_sofar >= p.scale_in_fav_trigger_frac:
+            if p.scale_in_2_trigger_frac is not None and not scaled_in_2:
+                if orig_risk_dist > 0 and progressed_adverse / orig_risk_dist >= p.scale_in_2_trigger_frac:
                     add_price = (
-                        entry_price + p.scale_in_fav_trigger_frac * reward_dist_sofar
+                        orig_entry_price - p.scale_in_2_trigger_frac * orig_risk_dist
                         if pending_is_long
-                        else entry_price - p.scale_in_fav_trigger_frac * reward_dist_sofar
+                        else orig_entry_price + p.scale_in_2_trigger_frac * orig_risk_dist
+                    )
+                    add_qty = p.scale_in_2_add_qty
+                    new_total_qty = pending_qty + add_qty
+                    entry_price = (entry_price * pending_qty + add_price * add_qty) / new_total_qty
+                    pending_qty = new_total_qty
+                    scaled_in_2 = True
+
+            if p.scale_in_fav_trigger_frac is not None and not scaled_in_fav:
+                if orig_reward_dist > 0 and progressed_fav / orig_reward_dist >= p.scale_in_fav_trigger_frac:
+                    add_price = (
+                        orig_entry_price + p.scale_in_fav_trigger_frac * orig_reward_dist
+                        if pending_is_long
+                        else orig_entry_price - p.scale_in_fav_trigger_frac * orig_reward_dist
                     )
                     add_qty = p.scale_in_fav_add_qty
                     new_total_qty = pending_qty + add_qty
@@ -367,6 +404,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         "mae_frac": mae_dist / risk_dist if risk_dist > 0 else np.nan,
                         "mfe_frac": mfe_dist / reward_dist if reward_dist > 0 else np.nan,
                         "scaled_in": scaled_in,
+                        "scaled_in_2": scaled_in_2,
                         "scaled_in_fav": scaled_in_fav,
                     }
                 )

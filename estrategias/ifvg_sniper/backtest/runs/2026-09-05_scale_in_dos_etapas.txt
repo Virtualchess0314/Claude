@@ -1,0 +1,33 @@
+IFVG Sniper — scale-in en dos etapas (25% + 50% hacia el SL), MNQ 5m y 3m
+=====================================================================
+
+Extensión del scale-in adverso: segunda etapa independiente
+(scale_in_2_trigger_frac/scale_in_2_add_qty) que agrega OTRO contrato
+si el precio sigue cayendo más allá del primer disparador.
+
+Fix importante de paso: los % de scale-in ahora se miden siempre contra
+el riesgo/recompensa ORIGINALES de la entrada (orig_risk_dist/
+orig_reward_dist, fijos desde el llenado), no contra el precio ya
+promediado por una etapa anterior -si no, "50%" dejaría de significar
+lo mismo una vez sumado el primer contrato. Verificado sin regresión:
+"solo 25%" da exactamente los mismos números que antes del fix.
+
+RESULTADO (train/test, ambos timeframes):
+
+              sin nada      solo 25%      solo 50%      25%+50% encadenados
+  5m train    $7.553        $8.601        $7.899        $8.947  (mejor)
+  5m test     $4.330        $4.843        $4.707        $5.220  (mejor, +20.6%)
+  3m train    $8.269        $9.647        $9.046        $10.425 (mejor)
+  3m test     $6.707        $7.508        $7.225        $8.026  (mejor, +19.7%)
+
+La combinación de las dos etapas supera a cualquiera de las dos por
+separado, en los 4 escenarios. El profit factor se mantiene
+prácticamente estable (dentro del ruido: 1.97-2.08 en 5m, 1.30-1.32 en
+3m), y el drawdown sube proporcionalmente (~27-39% más que sin scale-in),
+esperable al meter más contratos en las operaciones que retroceden.
+
+CONCLUSIÓN: la mejor variante encontrada hasta ahora de todo lo probado
+en esta sesión (breakeven, entrada más profunda, scale-in favorable,
+scale-in de una etapa). Candidata a llevar al .pine, pendiente de
+decisión del usuario -requiere lógica de promediar precio de entrada
+en dos pasos, más compleja que un filtro simple.
