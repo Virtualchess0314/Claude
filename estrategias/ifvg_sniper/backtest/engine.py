@@ -51,6 +51,11 @@ class Params:
     session_close_hour: int = 16
     session_close_minute: int = 45
 
+    # filtro opcional de horario de entrada (no afecta salidas de posiciones
+    # ya abiertas, sólo si se permite ABRIR una orden nueva). None = sin filtro.
+    entry_start_hour: Optional[float] = None
+    entry_end_hour: Optional[float] = None
+
 
 @dataclass
 class Zone:
@@ -216,7 +221,16 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 pending_zone = None
 
         # ── 5. Buscar una nueva zona elegible si estamos libres ─────────────
-        if state == "none" and within and not np.isnan(a):
+        entry_hour_ok = True
+        if p.entry_start_hour is not None:
+            local = ts[i].tz_convert(p.session_tz)
+            hour_now = local.hour + local.minute / 60
+            if p.entry_start_hour <= p.entry_end_hour:
+                entry_hour_ok = p.entry_start_hour <= hour_now < p.entry_end_hour
+            else:  # ventana que cruza medianoche
+                entry_hour_ok = hour_now >= p.entry_start_hour or hour_now < p.entry_end_hour
+
+        if state == "none" and within and entry_hour_ok and not np.isnan(a):
             tol = a * p.touch_tol_atr
             for z in zones:
                 if z.active and z.flipped and not z.used:

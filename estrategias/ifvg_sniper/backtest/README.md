@@ -68,6 +68,30 @@ de TradingView). La corrida vigente en los inputs del `.pine`:
   ~50% winrate en ambos (la más consistente del barrido, no la de mayor PF
   a secas). **Todavía sin comisión ni slippage.**
 
+## Desglose por horario/sesión/día (`analyze_sessions.py`)
+
+```bash
+python3 analyze_sessions.py tus_datos.csv \
+    --min-gap-atr 0.75 --sl-atr-mult 0.75 --rr-target 1.5 --max-risk-usd 300
+```
+
+Corre la config elegida y parte las operaciones resultantes por hora del
+día, ventana de sesión (Asia/Londres/NY), día de la semana y dirección
+(long/short), para ver DÓNDE está el winrate. Es un análisis descriptivo,
+no una optimización más — cortar el mismo puñado de operaciones en cada vez
+más categorías es la forma más fácil de "encontrar" un patrón que en
+realidad es ruido, así que cada tabla imprime el número de operaciones de
+cada bucket: con pocos trades, no es señal.
+
+**Hallazgo validado con MNQ 5m (jul-sep 2026):** restringir las entradas a
+la sesión de Nueva York (08:00–16:00 ET) sube el PF de forma consistente en
+train Y test (1.57→1.84 train, 1.49→2.52 test; winrate ~50%→~55-60%), a
+costa de ~40% menos operaciones. A diferencia del corte por día de la
+semana (donde 32 trades de "lunes" salen de sólo ~8-9 lunes reales — muestra
+insuficiente para confiar), esto se validó re-corriendo train/test por
+separado, no mirando una sola tabla. Implementado como filtro opcional
+(`useEntryWindow`) en el `.pine`, activado por defecto.
+
 ## Limitaciones a tener en cuenta
 
 - Si en la misma vela se tocan SL y TP, el motor asume que el SL se ejecutó

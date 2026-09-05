@@ -80,6 +80,15 @@ sessionCloseHour  = input.int(16, "Hora de cierre forzado (0-23)", minval = 0, m
 sessionCloseMinute = input.int(45, "Minuto de cierre forzado", minval = 0, maxval = 59, group = g3,
      tooltip = "Se cierra TODO 15 min antes del corte real (ej. 16:45 si el corte es 17:00) para dejar margen de ejecución.")
 
+g3b = "Ventana horaria de entrada"
+useEntryWindow    = input.bool(true, "Sólo buscar señales nuevas dentro de esta ventana", group = g3b,
+     tooltip = "No afecta operaciones ya abiertas ni órdenes límite ya puestas — sólo restringe cuándo se ABRE una orden nueva. Analizado con backtest/analyze_sessions.py sobre MNQ 5m: fuera de la sesión de Nueva York el profit factor cae bastante (ver backtest/README.md).")
+entryStartHour    = input.int(8, "Hora de inicio (0-23)", minval = 0, maxval = 23, group = g3b)
+entryStartMinute  = input.int(0, "Minuto de inicio", minval = 0, maxval = 59, group = g3b)
+entryEndHour      = input.int(16, "Hora de fin (0-23)", minval = 0, maxval = 23, group = g3b)
+entryEndMinute    = input.int(0, "Minuto de fin", minval = 0, maxval = 59, group = g3b,
+     tooltip = "Por defecto 08:00–16:00 hora de sesión (sessionTz) — sesión de Nueva York. En el barrido sobre MNQ 5m (jul-sep 2026) esta ventana dio PF 1.84 train / 2.52 test y ~55-60% winrate, contra PF 1.57/1.49 y ~50% operando las 24 horas. Menos operaciones (~40% menos) a cambio de mejor calidad.")
+
 g4 = "Visualización"
 showLevels        = input.bool(true, "Dibujar ENTRY/SL/TP en el gráfico", group = g4)
 maxLevelsShown     = input.int(8, "Máx. operaciones dibujadas a la vez", group = g4)
@@ -149,6 +158,12 @@ minutesNow = sessHour * 60 + sessMinute
 minutesCutoff = sessionCloseHour * 60 + sessionCloseMinute
 withinSession = not useSessionClose or minutesNow < minutesCutoff
 
+entryWindowStart = entryStartHour * 60 + entryStartMinute
+entryWindowEnd   = entryEndHour * 60 + entryEndMinute
+// ventana normal (inicio < fin) vs. ventana que cruza medianoche (inicio > fin)
+entryWindowRaw = entryWindowStart <= entryWindowEnd ? (minutesNow >= entryWindowStart and minutesNow < entryWindowEnd) : (minutesNow >= entryWindowStart or minutesNow < entryWindowEnd)
+withinEntryWindow = not useEntryWindow or entryWindowRaw
+
 // ── 4. Orden límite en el retest de la línea IFVG (un trade por zona) ───────
 // pendingState: "none" (libre para buscar zona) → "waiting" (orden límite
 // puesta, esperando que el precio la toque) → "open" (posición llena).
@@ -164,7 +179,9 @@ orderPlacedLong  = false
 orderPlacedShort = false
 
 // (a) Buscar una nueva zona elegible sólo si no hay orden ni posición viva
-if pendingState == "none" and withinSession and array.size(zones) > 0
+// (la ventana horaria sólo bloquea ABRIR una orden nueva, no afecta a las
+// que ya están puestas o abiertas — ver sección 3b)
+if pendingState == "none" and withinSession and withinEntryWindow and array.size(zones) > 0
     tol = atr * touchTolAtr
     for i = 0 to array.size(zones) - 1
         z = array.get(zones, i)
@@ -298,3 +315,4 @@ if showLevels and (orderPlacedLong or orderPlacedShort)
 // ── Otros indicadores visuales ────────────────────────────────────────────────
 plot(atr, "ATR (referencia)", color = color.gray, display = display.data_window)
 bgcolor(withinSession ? na : color.new(color.red, 90), title = "Fuera de sesión permitida")
+bgcolor(withinSession and not withinEntryWindow ? color.new(color.orange, 92) : na, title = "Fuera de ventana horaria de entrada")
