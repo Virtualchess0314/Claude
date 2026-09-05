@@ -1,4 +1,4 @@
 *.csv
+!runs/*.csv
 data/
 __pycache__/
-optimize_results.csv

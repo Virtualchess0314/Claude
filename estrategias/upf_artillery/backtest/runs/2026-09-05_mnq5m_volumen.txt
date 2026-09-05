@@ -1,0 +1,28 @@
+UPF Artillery — impacto del filtro de volumen, MNQ 5m
+=====================================================================
+
+Dataset con volumen real: CME_MINI_MNQ1_2.csv, 8.326 velas de 5m,
+24 jul - 04 sep 2026 (~6 semanas -más corto que las 11.040 velas /
+2 meses del dataset sin volumen usado para el resto de los barridos).
+
+Con la config óptima encontrada en el barrido grande (sd_mult=0.5,
+sl_mult=1.5, tp1_mult=1.5, tp2_mult=2.5, tp3_mult=3.5, rsi_bull=30,
+rsi_bear=50), sobre el dataset COMPLETO (no se pudo partir train/test:
+con volumen sólo quedaban 2 operaciones en el tramo de test):
+
+  Con volumen (vol_mult=0.8):  20 trades, PF 1.90, WR 60.0%,
+                                expectancy 0.38R, neto $8.637, dd -$3.715
+  Sin volumen (filtro off):    46 trades, PF 1.63, WR 58.7%,
+                                expectancy 0.31R, neto $13.449, dd -$4.666
+
+Patrón coherente: el filtro de volumen corta las señales a menos de la
+mitad, pero las que deja son de mejor calidad (PF y expectancy más
+altos, menor drawdown en términos relativos). A cambio, el total de
+plata ganada es menor por operar mucho menos seguido.
+
+ESTO ES DESCRIPTIVO, NO VALIDADO train/test -la muestra con volumen es
+demasiado chica (20 trades totales, ni hablar de partirla) para
+confiar en el resultado con el mismo rigor que el resto de los
+barridos. Para una conclusión sólida hace falta más historial con
+volumen incluido (idealmente los mismos ~2 meses que se usaron para el
+barrido principal).

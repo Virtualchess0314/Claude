@@ -5,6 +5,31 @@ escalonado con qty entera, sin solape sesión/EOD, reset diario en la
 apertura de sesión). Misma metodología que el backtester de IFVG Sniper:
 partición train/test en el tiempo, ranking por resultado en test.
 
+## Resultado vigente (MNQ 5m, 2 meses, sin volumen)
+
+Barrido de 2916 combinaciones (`runs/2026-09-05_mnq5m_barrido_completo.csv`).
+Mejor config, consistente train/test:
+
+```
+sd_mult=0.5  sl_mult=1.5  tp1_mult=1.5  tp2_mult=2.5  tp3_mult=3.5
+rsi_bull=30  rsi_bear=50
+```
+
+Train: PF 1.67, winrate 57%, 35 trades · Test: PF 1.60, winrate 60%,
+20 trades, expectancy 0.36R. Bastante mejor que los valores default
+(PF ~1.07) — pero recordar que `initial_capital` importa mucho acá (ver
+más abajo): estos números asumen $50.000, tu cuenta real.
+
+## Filtro de volumen: impacto exploratorio (no validado)
+
+Con un export que sí trae volumen (`runs/2026-09-05_mnq5m_volumen.txt`),
+sobre 6 semanas (más corto que el dataset principal): con la config de
+arriba, el filtro de volumen (`vol_mult=0.8`) corta las señales a menos
+de la mitad (46 -> 20) pero sube el profit factor (1.63 -> 1.90) y la
+expectancy (0.31R -> 0.38R). No se pudo validar train/test -con
+volumen activo el tramo de test quedaba en 2 operaciones. Tratar como
+indicio, no como conclusión, hasta conseguir más historial con volumen.
+
 ## Diferencias importantes respecto al motor de IFVG
 
 - **Sin datos de volumen todavía.** Los CSV que veníamos usando (export
