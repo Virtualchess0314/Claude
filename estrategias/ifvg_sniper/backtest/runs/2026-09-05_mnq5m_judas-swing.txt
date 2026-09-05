@@ -1,0 +1,42 @@
+IFVG Sniper + filtro "Judas swing" (ICT) — MNQ 5m
+=====================================================================
+
+Definición implementada (confirmada con el usuario):
+  - Ancla: apertura de Nueva York (08:00 ET).
+  - Barrido: en una ventana angosta desde las 08:00 ET (probado 15 y 30
+    min), el precio tiene que romper el máximo o mínimo del DÍA ANTERIOR
+    (rango completo 00:00-23:59 ET del día previo).
+  - Rechazo/confirmación: el precio tiene que cerrar de vuelta del lado
+    correcto (bajo el máximo roto, o sobre el mínimo roto) -esto SÍ se
+    permite en cualquier vela posterior del mismo día, no sólo dentro de
+    la ventana de 15-30 min (la primera versión, exigiendo ambas cosas en
+    la misma ventana, daba solo 5 confirmaciones en 40 días -demasiado
+    poco incluso antes de cruzarlo con las señales IFVG).
+  - Sólo se habilitan entradas IFVG nuevas DESPUÉS de la confirmación ese
+    día. Sesgo de dirección opcional (judas_direction_bias): si se activa,
+    sólo toma la dirección de la reversión esperada (barrido de mínimo ->
+    sólo longs; barrido de máximo -> sólo shorts).
+
+RESULTADO: muestra insuficiente para sacar conclusiones, incluso con la
+versión relajada.
+
+  Base (sin Judas):        train 63 trades PF 2.08 / test 31 trades PF 2.29
+  Judas 15min, sin sesgo:  train  9 trades PF 1.98 / test  3 trades PF 0.00
+  Judas 30min, sin sesgo:  train 11 trades PF 2.75 / test  3 trades PF 0.00
+  Judas 15min + sesgo:     train  8 trades PF 1.58 / test  1 trades PF 0.00
+  Judas 30min + sesgo:     train  9 trades PF 1.94 / test  1 trades PF 0.00
+
+El Judas swing (barrido + rechazo) sólo se confirma ~15-20 veces en 40
+días de datos -y de esas veces, tiene que coincidir además con una señal
+IFVG válida. Es un evento raro al cuadrado: con sólo 2 meses de historial
+la muestra resultante es de 1 a 11 operaciones, muy por debajo de lo
+necesario para confiar en cualquier PF o winrate (train se ve prometedor,
+pero el colapso a 0% en test con 1-3 trades es ruido de muestra chica, no
+evidencia de que el filtro sea malo).
+
+CONCLUSIÓN: no se recomienda ni se descarta el filtro con la evidencia
+actual -haría falta bastantes meses más de historial para juntar una
+muestra de días-con-Judas-swing suficiente. El filtro queda implementado
+en engine.py (judas_swing_filter, judas_window_start_hour,
+judas_window_end_hour, judas_direction_bias) para reintentarlo cuando
+haya más datos. No se llevó al .pine todavía por la misma razón.
