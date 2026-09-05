@@ -7,7 +7,7 @@
 // Educational tool. Not financial advice.
 // ═══════════════════════════════════════════════════════════════════
 strategy('Ultimate Prop Firm [Artillery]', shorttitle='UPF', overlay=true,
-     initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=1,
+     initial_capital=10000, default_qty_type=strategy.fixed, default_qty_value=10,
      commission_type=strategy.commission.cash_per_contract, commission_value=0.62,
      slippage=1, calc_on_every_tick=false, process_orders_on_close=true,
      margin_long=5, margin_short=5,
@@ -30,6 +30,8 @@ vol_len    = input.int(20, "Volume MA Len", group=grp3)
 vol_mult   = input.float(0.8, "Volume Mult", group=grp3)
 
 grp4 = "Risk Management"
+base_qty   = input.int(10, "Contratos base", minval=10, step=10, group=grp4,
+     tooltip = "Tiene que ser múltiplo de 10 para que la salida en 3 etapas (40%/50%/resto) reparta contratos enteros. Con 1 solo contrato, el 40% y el 50% redondean a 0 y en la práctica nunca se ejecutan -todo salía junto en TP3.")
 sl_mult    = input.float(1.5, "SL ATR Mult", group=grp4)
 tp1_mult   = input.float(1.0, "TP1 ATR Mult", group=grp4)
 tp2_mult   = input.float(2.0, "TP2 ATR Mult", group=grp4)
@@ -71,23 +73,43 @@ vol_ok = volume >= vma * vol_mult
 ch = hour(time, "America/New_York")
 cm = minute(time, "America/New_York")
 ct = ch * 100 + cm
-in_sess = ct >= sess_start and ct <= sess_end
+// in_sess corta ANTES de sess_end (no <=) para que nunca se solape con
+// is_eod: en la vela exacta de sess_end sólo se fuerza el cierre, nunca
+// se abre una operación nueva.
+in_sess = ct >= sess_start and ct < sess_end
 is_eod = ct >= sess_end
 
+// El día de trading se resetea al ENTRAR a la sesión (ct cruza sess_start),
+// no a medianoche del huso horario del símbolo — para un futuro que opera
+// casi 24hs, "medianoche" no coincide con el día de trading real de una
+// cuenta fondeada, que se cuenta a partir de la apertura de sesión.
+var bool was_in_sess = false
 var int dtrades = 0
 var float deq = strategy.equity
-if ta.change(dayofweek) != 0
+entering_session = in_sess and not was_in_sess
+if entering_session
     dtrades := 0
     deq := strategy.equity
+was_in_sess := in_sess
 ddd = deq > 0 ? (deq - strategy.equity) / deq * 100 : 0
 can_trade = dtrades < max_trades and ddd < max_dd and in_sess
 
-// ── Entry Signals ────────────────────────────────────────────
-// Long: pivot low confirmed + price in demand zone + bullish bar + RSI floor + volume
-long_go = not na(piv_l) and low <= demand_hi and rsi >= rsi_bull and close > open and vol_ok and can_trade and strategy.position_size == 0
+// ── Deduplicación de zona ─────────────────────────────────────
+// Sin esto, mientras estés flat y el resto de los filtros alineen, el
+// script puede volver a entrar una y otra vez en la MISMA zona de oferta/
+// demanda (no cambia hasta que aparece un pivot nuevo). Se guarda el nivel
+// de pivot ya operado y se exige uno distinto para la próxima entrada.
+var float traded_pl = na
+var float traded_ph = na
+new_demand_zone = not na(last_pl) and last_pl != traded_pl
+new_supply_zone = not na(last_ph) and last_ph != traded_ph
 
-// Short: pivot high confirmed + price in supply zone + bearish bar + RSI ceiling + volume
-short_go = not na(piv_h) and high >= supply_lo and rsi <= rsi_bear and close < open and vol_ok and can_trade and strategy.position_size == 0
+// ── Entry Signals ────────────────────────────────────────────
+// Long: pivot low confirmado + price en zona de demanda + vela alcista + RSI piso + volumen
+long_go = not na(piv_l) and new_demand_zone and low <= demand_hi and rsi >= rsi_bull and close > open and vol_ok and can_trade and strategy.position_size == 0
+
+// Short: pivot high confirmado + price en zona de oferta + vela bajista + RSI techo + volumen
+short_go = not na(piv_h) and new_supply_zone and high >= supply_lo and rsi <= rsi_bear and close < open and vol_ok and can_trade and strategy.position_size == 0
 
 // ── Execution: 3-Stage Take Profit ───────────────────────────
 var float e_sl  = na
@@ -100,22 +122,24 @@ if long_go
     e_tp1 := close + atr * tp1_mult
     e_tp2 := close + atr * tp2_mult
     e_tp3 := close + atr * tp3_mult
-    strategy.entry("L", strategy.long)
+    strategy.entry("L", strategy.long, qty=base_qty)
     strategy.exit("T1", "L", qty_percent=40, limit=e_tp1, stop=e_sl)
     strategy.exit("T2", "L", qty_percent=50, limit=e_tp2, stop=e_sl)
     strategy.exit("T3", "L", limit=e_tp3, stop=e_sl)
     dtrades += 1
+    traded_pl := last_pl
 
 if short_go
     e_sl  := close + atr * sl_mult
     e_tp1 := close - atr * tp1_mult
     e_tp2 := close - atr * tp2_mult
     e_tp3 := close - atr * tp3_mult
-    strategy.entry("S", strategy.short)
+    strategy.entry("S", strategy.short, qty=base_qty)
     strategy.exit("T1s", "S", qty_percent=40, limit=e_tp1, stop=e_sl)
     strategy.exit("T2s", "S", qty_percent=50, limit=e_tp2, stop=e_sl)
     strategy.exit("T3s", "S", limit=e_tp3, stop=e_sl)
     dtrades += 1
+    traded_ph := last_ph
 
 // Flatten end of day
 if is_eod and strategy.position_size != 0
