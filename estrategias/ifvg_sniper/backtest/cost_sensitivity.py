@@ -24,14 +24,15 @@ import pandas as pd
 from data import load_csv
 from engine import Params, simulate
 
-# Estimados de referencia (NO confirmados) para MNQ, sólo para ubicar el
-# rango — el número real hay que sacarlo de la propia cuenta de Tradovate.
+# $3.50 round-turn por contrato = confirmado por el usuario desde su cuenta
+# de Tradovate/Tradeify (comisión + CME + NFA todo incluido). El resto son
+# estimados sólo para ver la sensibilidad alrededor de ese número real.
 SCENARIOS = [
     ("Sin costos (ya visto)", 0.0, 0.0),
     ("Sólo CME+NFA (~$0.74 RT, estimado)", 0.74, 0.0),
     ("Bajo (~$1.30 RT, estimado)", 1.30, 0.5),
     ("Medio (~$2.00 RT, estimado)", 2.00, 1.0),
-    ("Alto (~$3.50 RT, estimado)", 3.50, 1.0),
+    ("REAL confirmado ($3.50 RT, Tradovate/Tradeify)", 3.50, 1.0),
     ("Muy alto (~$5.00 RT, estimado)", 5.00, 1.5),
 ]
 

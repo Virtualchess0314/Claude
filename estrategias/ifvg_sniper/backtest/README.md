@@ -129,25 +129,27 @@ comisión "round-turn" por contrato (bróker + CME + NFA todo junto) y de
 slippage, en train y test por separado. Ver
 `runs/2026-09-05_mnq5m_cost_sensitivity.txt` para la corrida completa.
 
-**Resultado con MNQ 5m (jul-sep 2026):** el tamaño de posición típico de
-esta config es ~7 contratos (con `maxRiskUSD=300` y un SL de 0.75×ATR, el
-ATR mediano de ~26 puntos da un riesgo de ~$40/contrato → 300/40 ≈ 7). Con
-eso, el punto de equilibrio (profit factor de test = 1.0, con 1 tick de
-slippage en salidas de mercado) está en **~$23 de comisión round-turn por
-contrato** — muy por encima de cualquier tarifa real esperable para MNQ
-(exchange+regulatorio solos rondan ~$0.74 RT; con el markup del bróker,
-normalmente no debería pasar de unos pocos dólares). El edge parece
-robusto a costos, pero:
+**Comisión real confirmada por el usuario: $3.50 round-turn por contrato**
+(Tradovate/Tradeify, comisión + CME + NFA todo incluido). Con eso, y 1 tick
+de slippage en salidas de mercado (SL / cierre de sesión):
 
-1. **El número de referencia sigue sin confirmar** — hay que sacarlo de la
-   propia cuenta de Tradovate (aparece en cualquier orden ejecutada, o en
-   Configuración → Cuenta → Comisiones) para reemplazar los escenarios
-   estimados de `SCENARIOS` en `cost_sensitivity.py` por el real.
-2. **~7 contratos de MNQ en una cuenta de 50k es una cifra a revisar contra
-   las reglas de Tradeify** — muchas cuentas fondeadas limitan la cantidad
-   de contratos (o el riesgo por posición) según el tamaño de cuenta,
-   independientemente de lo que diga el backtest. Confirmá el límite de
-   contratos de tu plan antes de operar este `maxRiskUSD` en real.
+| | Trades | PF | Winrate | Expectancy | Neto | Drawdown |
+|---|---|---|---|---|---|---|
+| Train | 63 | 2.08 | 60.3% | 0.44R | $7.553 | -$1.623 |
+| Test | 31 | 2.29 | 61.3% | 0.44R | $4.330 | -$1.205 |
+| **Completo** | **95** | **2.09** | **60.0%** | **0.42R** | **$11.590** | -$1.623 |
+
+El punto de equilibrio (profit factor = 1.0) está en **~$23 de comisión
+round-turn por contrato** — con la comisión real de $3.50 hay **~6-7x de
+margen** antes de que el costo se coma el edge. El tamaño de posición
+promedio de esta config es ~5-7 contratos (con `maxRiskUSD=300` y SL de
+0.75×ATR sobre un ATR mediano de ~26 puntos → ~$40 de riesgo/contrato →
+300/40 ≈ 7), lo que a $3.50/contrato es ~$20-25 de comisión por operación.
+
+**Pendiente de tu lado:** confirmar el límite de contratos que permite tu
+cuenta de 50k de Tradeify — muchas cuentas fondeadas limitan la cantidad de
+contratos (o el riesgo por posición) según el tamaño de cuenta,
+independientemente de lo que diga el backtest.
 
 ## Limitaciones a tener en cuenta
 
