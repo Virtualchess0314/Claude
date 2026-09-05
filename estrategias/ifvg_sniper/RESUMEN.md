@@ -21,25 +21,27 @@ Cuenta: **$50.000**, límite real de **40 micros**. Comisión real confirmada:
 
 ## Comparación por timeframe
 
-| | **3m** | **5m (vigente en el .pine)** | **10m** | 15m / 30m |
-|---|---|---|---|---|
-| Historial usado | 11.500 velas, 1 mes (2 ago–4 sep) | 11.040 velas, 2 meses (12 jul–4 sep) | derivado del de 5m (2 meses) | derivado del de 5m (2 meses) |
-| `minGapAtr` | 0.50 | 0.75 | 0.75 | — |
-| `slAtrMult` | 1.00 | 0.75 | 0.75 | — |
-| `rrTarget` | 1.0 (1.2 mejora leve, sin adoptar) | **1.5** | 1.0 | — |
-| `cleanBreakBufferAtr` | 0.05 (default) | 0.10 | 0.10 | — |
-| Ventana horaria de entrada | Ninguna (24h) | **Sólo NY 08:00–16:00 ET** | Ninguna (24h) | — |
-| Operaciones (dataset completo) | 348 | 95 | 84 | — |
-| Winrate | 60–66% (train/test) | 60% | 69% | — |
-| Profit Factor | 1.30 train / 1.58 test | 2.08 train / 2.29 test | 2.03 train / 1.98 test | — |
-| Expectancy | 0.21R | 0.42R | 0.30R | — |
-| Neto (test) | $6.707 | $4.330 | $1.655 (muestra chica: 19 trades) | — |
-| Drawdown máximo | -$2.015 | -$1.623 | -$960 (el mejor) | — |
-| **Racha máxima de SL seguidos** | 6 (-$1.466) | 6 (-$1.623) | **3** (-$824, la mejor) | 8 (-$2.054, la peor) |
-| Duración promedio | ~6.5 min | ~8.5 min | ~10.6 min | — |
-| Contratos promedio (riesgo $300) | ~8 | ~5-7 | — | — |
-| Volumen disponible en los datos | No | No (sí en un export de 6 semanas aparte) | No | — |
-| **Veredicto** | Viable | **Viable — es el que está en el .pine** | Viable (mejor consistencia/drawdown) | **Sin edge validado, no operar** |
+| | **1m** | **3m** | **5m (vigente en el .pine)** | **10m** | **15m** | 30m |
+|---|---|---|---|---|---|---|
+| Historial usado | 13.800 velas, 2 semanas (23 ago–4 sep) | 11.500 velas, 1 mes (2 ago–4 sep) | 11.040 velas, 2 meses (12 jul–4 sep) | derivado del de 5m (2 meses) | **10.317 velas, 5 meses (31 mar–4 sep), export nativo** | derivado del de 5m (2 meses) |
+| `minGapAtr` | 1.25 | 0.50 | 0.75 | 0.75 | 0.75 | — |
+| `slAtrMult` | 1.00 | 1.00 | 0.75 | 0.75 | 0.75 | — |
+| `rrTarget` | 1.0 | 1.0 (1.2 mejora leve, sin adoptar) | **1.5** | 1.0 | 1.5 | — |
+| `cleanBreakBufferAtr` | 0.10 | 0.05 (default) | 0.10 | 0.10 | 0.05 (default) | — |
+| Ventana horaria de entrada | Ninguna (24h) | Ninguna (24h) | **Sólo NY 08:00–16:00 ET** | Ninguna (24h) | Ninguna (24h) | — |
+| Operaciones (dataset completo) | 63 | 348 | 95 | 84 | 137 | — |
+| Winrate | 73% | 60–66% (train/test) | 60% | 69% | 52% | — |
+| Profit Factor | 1.82 (1.50 train/2.30 test) | 1.30 train / 1.58 test | 2.08 train / 2.29 test | 2.03 train / 1.98 test | 1.46 train / 1.35 test | — |
+| Expectancy | 0.26R | 0.21R | 0.42R | 0.30R | 0.20R | — |
+| Neto (dataset completo) | $4.753 | $6.707 (test) | $4.330 (test) | $1.655 (test, muestra chica: 19 trades) | $7.598 | — |
+| Drawdown máximo | -$1.462 | -$2.015 | -$1.623 | -$960 (el mejor) | -$2.169 | — |
+| **Racha máxima de SL seguidos** | 3 (-$1.033) | 6 (-$1.466) | 6 (-$1.623) | **3** (-$824, la mejor) | 7 (-$1.778) | 8 (-$2.054, la peor, con datos de 2 meses) |
+| Duración promedio | **~1.5 min** | ~6.5 min | ~8.5 min | ~10.6 min | ~26 min | — |
+| Contratos promedio (riesgo $300) | ~15 (con `minGap` más laxo llegaba a ~28, topando el límite de 40) | ~8 | ~5-7 | — | ~4 | — |
+| Volumen disponible en los datos | No | No | No (sí en un export de 6 semanas aparte) | No | No | No |
+| **Veredicto** | Viable, pero sólo 2 semanas de muestra — menos confianza que el resto. Duración de ~1.5 min roza terreno de alta frecuencia | Viable | **Viable — es el que está en el .pine** | Viable (mejor consistencia/drawdown) | **Viable — se revirtió el veredicto anterior al conseguir 5 meses de historial nativo** | Sin datos nuevos todavía — sigue sin edge validado con los 2 meses que hay |
+
+**Nota sobre 15m:** la primera vez que se probó (con sólo 2 meses de datos derivados de 5m) no se encontró ningún edge consistente. Con 5 meses de historial nativo la conclusión cambió por completo — el problema era la muestra insuficiente, no que el timeframe fuera malo. Vale la pena repetir este ejercicio para 30m si se consigue historial nativo largo de ese timeframe también.
 
 ## Cosas probadas y su resultado
 

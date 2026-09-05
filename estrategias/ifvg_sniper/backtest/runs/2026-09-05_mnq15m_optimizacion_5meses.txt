@@ -1,0 +1,29 @@
+IFVG Sniper — MNQ 15m (export nativo, 5 meses) — revierte veredicto anterior
+=====================================================================
+
+10.317 velas, 31 mar - 4 sep 2026 (export nativo, no derivado). Train
+70% (7221) / test 30% (3096).
+
+La primera vez que se probó 15m (ver 2026-09-05_mnq15m-30m_sin-edge.txt)
+sólo había 2 meses de datos DERIVADOS de 5m, y ninguna combinación
+mostró edge consistente train/test. Con 5 meses de historial NATIVO, sí
+aparece un edge real:
+
+CONFIG FINAL: min_gap_atr=0.75, sl_atr_mult=0.75, rr_target=1.5,
+clean_break_buffer_atr=0.05 (el default -0.10 empeora acá, al revés
+que en 5m/10m), SIN ventana horaria (la NY también empeora, -30 puntos
+de PF). avg_qty=4 (cómodo).
+
+Resultado sobre el dataset completo: 137 trades, PF 1.44 (1.46 train /
+1.35 test, consistente, sin señal de sobreajuste), winrate 52%,
+expectancy 0.20R, neto $7.598, drawdown -$2.169, racha máxima de SL: 7
+(-$1.778), duración promedio ~26 min.
+
+CONCLUSIÓN: 15m SÍ es viable con suficiente historial. El "sin edge"
+anterior era un problema de muestra insuficiente, no del timeframe en
+sí. PF y winrate son más modestos que 5m/10m (el más débil de los
+timeframes con edge confirmado), pero ya no se descarta.
+
+PENDIENTE: repetir el mismo ejercicio para 30m si se consigue
+historial nativo largo de ese timeframe (los 2 meses derivados que hay
+hoy no alcanzan, mismo problema que tenía 15m antes).

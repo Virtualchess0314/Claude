@@ -1,0 +1,26 @@
+IFVG Sniper — MNQ 1m (export nativo, 2 semanas)
+=====================================================================
+
+13.800 velas, 23 ago - 4 sep 2026 (TradingView limita bastante el
+historial disponible en 1m). Train 70% (9660) / test 30% (4140).
+
+Barrido pre-comisión encontró min_gap_atr=0.50/sl=0.50/rr=1.0 como más
+grande en muestra, pero con comisión real incluida se derrumbó (PF
+0.75) -avg_qty=28 contratos (tope de seguridad 40 casi alcanzado),
+comisión de ~$99/trade sobre un riesgo de $300. Re-optimizado con
+comisión desde el arranque.
+
+CONFIG FINAL: min_gap_atr=1.25, sl_atr_mult=1.00, rr_target=1.0,
+clean_break_buffer_atr=0.10, SIN ventana horaria (la NY empeora acá
+también, mismo patrón que 3m/10m/15m/30m). avg_qty=15 (cómodo).
+
+Resultado sobre el dataset completo: 63 trades, PF 1.82 (1.50 train /
+2.30 test), winrate 73%, expectancy 0.26R, neto $4.753, drawdown
+-$1.462, racha máxima de SL: 3 (-$1.033), duración promedio ~1.5 min.
+
+ADVERTENCIAS:
+- Sólo 2 semanas de historial (39 train / 22 test trades) -la muestra
+  más chica de todos los timeframes probados. Menos confianza que en
+  3m/5m/10m/15m.
+- Duración promedio ~1.5 min: scalping puro, cerca del límite de "alta
+  frecuencia" que el diseño original buscaba evitar.
