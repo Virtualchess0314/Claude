@@ -45,7 +45,10 @@ max_dd     = input.float(3.5, "Max Daily DD %", group=grp5)
 
 grp6 = "Visuals"
 show_levels = input.bool(true, "Entry/TP/SL levels on signals", group=grp6)
+max_levels  = input.int(2, "Max signals shown at once", minval=1, maxval=10, group=grp6,
+     tooltip = "Antes se dibujaban 12 objetos por señal y nunca se borraban -con operaciones que duran ~20 velas y señales que pueden aparecer antes de eso, se amontonaban. Ahora sólo se ven las últimas N señales.")
 show_zones  = input.bool(true, "Supply/demand zone boxes", group=grp6)
+max_zones   = input.int(3, "Max S/D zones shown at once", minval=1, maxval=10, group=grp6)
 show_mood   = input.bool(true, "Background market mood", group=grp6)
 show_dash   = input.bool(true, "Dashboard", group=grp6)
 
@@ -153,43 +156,52 @@ trend_up = ema21 > ema55 and close > ema21
 trend_dn = ema21 < ema55 and close < ema21
 trending = adx_val > 20
 
-// ── Visuals: S/D zones ───────────────────────────────────────
+// ── Visuals: S/D zones (sólo se ven las últimas `max_zones`) ──
+var array<box> zoneBoxes = array.new<box>()
+
 if show_zones and not na(piv_l)
-    box.new(bar_index - piv_right, demand_hi, bar_index + 20, last_pl - atr * sd_mult, border_color=color.new(color.green, 70), bgcolor=color.new(color.green, 90))
+    array.push(zoneBoxes, box.new(bar_index - piv_right, demand_hi, bar_index + 20, last_pl - atr * sd_mult, border_color=color.new(color.green, 70), bgcolor=color.new(color.green, 90)))
 if show_zones and not na(piv_h)
-    box.new(bar_index - piv_right, last_ph + atr * sd_mult, bar_index + 20, supply_lo, border_color=color.new(color.red, 70), bgcolor=color.new(color.red, 90))
+    array.push(zoneBoxes, box.new(bar_index - piv_right, last_ph + atr * sd_mult, bar_index + 20, supply_lo, border_color=color.new(color.red, 70), bgcolor=color.new(color.red, 90)))
+
+if array.size(zoneBoxes) > max_zones
+    box.delete(array.shift(zoneBoxes))
 
 plotshape(long_go, "Long Entry", shape.triangleup, location.belowbar, color.green, size=size.normal)
 plotshape(short_go, "Short Entry", shape.triangledown, location.abovebar, color.red, size=size.normal)
 
-// ── Visuals: entry / target / stop levels per signal ─────────
-if show_levels and long_go
-    line.new(bar_index, close, bar_index + 30, close, color=#00e5ff, width=3)
-    label.new(bar_index + 15, close, "BUY @ " + str.tostring(close, "#.##"), style=label.style_label_center, color=#00e5ff, textcolor=color.white, size=size.normal)
-    box.new(bar_index, e_tp3, bar_index + 30, close, border_color=color.new(#00e5ff, 30), bgcolor=color.new(#00e5ff, 90), text="TARGET ZONE", text_color=#00e5ff, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
-    line.new(bar_index, e_tp1, bar_index + 30, e_tp1, color=#69f0ae, width=2, style=line.style_dashed)
-    label.new(bar_index + 30, e_tp1, " TP1 " + str.tostring(e_tp1, "#.#"), style=label.style_label_left, color=#69f0ae, textcolor=color.white, size=size.small)
-    line.new(bar_index, e_tp2, bar_index + 30, e_tp2, color=#00e676, width=2, style=line.style_dashed)
-    label.new(bar_index + 30, e_tp2, " TP2 " + str.tostring(e_tp2, "#.#"), style=label.style_label_left, color=#00e676, textcolor=color.white, size=size.small)
-    line.new(bar_index, e_tp3, bar_index + 30, e_tp3, color=#ffd600, width=3, style=line.style_dashed)
-    label.new(bar_index + 30, e_tp3, " TP3 " + str.tostring(e_tp3, "#.#"), style=label.style_label_left, color=#ffd600, textcolor=color.black, size=size.small)
-    box.new(bar_index, close, bar_index + 30, e_sl, border_color=color.new(#ff1744, 30), bgcolor=color.new(#ff1744, 90), text="STOP ZONE", text_color=#ff1744, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
-    line.new(bar_index, e_sl, bar_index + 30, e_sl, color=#ff1744, width=3)
-    label.new(bar_index + 30, e_sl, " SL " + str.tostring(e_sl, "#.#"), style=label.style_label_left, color=#ff1744, textcolor=color.white, size=size.small)
+// ── Visuals: entry / TP / SL por señal (sólo las últimas `max_levels`) ─
+// Antes esto dibujaba 12 objetos por señal (2 líneas+etiqueta de entrada,
+// 2 cajas grandes "TARGET/STOP ZONE", 3 líneas+etiquetas de TP, línea+
+// etiqueta de SL) y nunca se borraban. Con operaciones de ~20 velas de
+// duración y señales que pueden llegar antes de eso, se amontonaban unas
+// sobre otras. Se sacaron las dos cajas grandes (redundantes con las
+// líneas) y el resto se guarda en arrays para borrar lo más viejo.
+var array<line> lvlLines   = array.new<line>()
+var array<label> lvlLabels = array.new<label>()
 
-if show_levels and short_go
-    line.new(bar_index, close, bar_index + 30, close, color=#e040fb, width=3)
-    label.new(bar_index + 15, close, "SELL @ " + str.tostring(close, "#.##"), style=label.style_label_center, color=#e040fb, textcolor=color.white, size=size.normal)
-    box.new(bar_index, close, bar_index + 30, e_tp3, border_color=color.new(#e040fb, 30), bgcolor=color.new(#e040fb, 90), text="TARGET ZONE", text_color=#e040fb, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
-    line.new(bar_index, e_tp1, bar_index + 30, e_tp1, color=#69f0ae, width=2, style=line.style_dashed)
-    label.new(bar_index + 30, e_tp1, " TP1 " + str.tostring(e_tp1, "#.#"), style=label.style_label_left, color=#69f0ae, textcolor=color.white, size=size.small)
-    line.new(bar_index, e_tp2, bar_index + 30, e_tp2, color=#00e676, width=2, style=line.style_dashed)
-    label.new(bar_index + 30, e_tp2, " TP2 " + str.tostring(e_tp2, "#.#"), style=label.style_label_left, color=#00e676, textcolor=color.white, size=size.small)
-    line.new(bar_index, e_tp3, bar_index + 30, e_tp3, color=#ffd600, width=3, style=line.style_dashed)
-    label.new(bar_index + 30, e_tp3, " TP3 " + str.tostring(e_tp3, "#.#"), style=label.style_label_left, color=#ffd600, textcolor=color.black, size=size.small)
-    box.new(bar_index, e_sl, bar_index + 30, close, border_color=color.new(#ff1744, 30), bgcolor=color.new(#ff1744, 90), text="STOP ZONE", text_color=#ff1744, text_size=size.small, text_halign=text.align_center, text_valign=text.align_center)
-    line.new(bar_index, e_sl, bar_index + 30, e_sl, color=#ff1744, width=3)
-    label.new(bar_index + 30, e_sl, " SL " + str.tostring(e_sl, "#.#"), style=label.style_label_left, color=#ff1744, textcolor=color.white, size=size.small)
+drawSignalLevels(isLong, entryPrice, sl, tp1, tp2, tp3) =>
+    entryColor = isLong ? #00e5ff : #e040fb
+    entryTxt = isLong ? "BUY @ " : "SELL @ "
+    array.push(lvlLines, line.new(bar_index, entryPrice, bar_index + 30, entryPrice, color=entryColor, width=3))
+    array.push(lvlLabels, label.new(bar_index + 15, entryPrice, entryTxt + str.tostring(entryPrice, "#.##"), style=label.style_label_center, color=entryColor, textcolor=color.white, size=size.normal))
+    array.push(lvlLines, line.new(bar_index, tp1, bar_index + 30, tp1, color=#69f0ae, width=2, style=line.style_dashed))
+    array.push(lvlLabels, label.new(bar_index + 30, tp1, " TP1 " + str.tostring(tp1, "#.#"), style=label.style_label_left, color=#69f0ae, textcolor=color.white, size=size.small))
+    array.push(lvlLines, line.new(bar_index, tp2, bar_index + 30, tp2, color=#00e676, width=2, style=line.style_dashed))
+    array.push(lvlLabels, label.new(bar_index + 30, tp2, " TP2 " + str.tostring(tp2, "#.#"), style=label.style_label_left, color=#00e676, textcolor=color.white, size=size.small))
+    array.push(lvlLines, line.new(bar_index, tp3, bar_index + 30, tp3, color=#ffd600, width=3, style=line.style_dashed))
+    array.push(lvlLabels, label.new(bar_index + 30, tp3, " TP3 " + str.tostring(tp3, "#.#"), style=label.style_label_left, color=#ffd600, textcolor=color.black, size=size.small))
+    array.push(lvlLines, line.new(bar_index, sl, bar_index + 30, sl, color=#ff1744, width=3))
+    array.push(lvlLabels, label.new(bar_index + 30, sl, " SL " + str.tostring(sl, "#.#"), style=label.style_label_left, color=#ff1744, textcolor=color.white, size=size.small))
+
+if show_levels and (long_go or short_go)
+    drawSignalLevels(long_go, close, e_sl, e_tp1, e_tp2, e_tp3)
+    // cada señal agrega 5 líneas (entrada, TP1, TP2, TP3, SL) y 5 etiquetas
+    objectsPerSignal = 5
+    if array.size(lvlLines) > max_levels * objectsPerSignal
+        for _ = 1 to objectsPerSignal
+            line.delete(array.shift(lvlLines))
+            label.delete(array.shift(lvlLabels))
 
 // ── Visuals: background mood ─────────────────────────────────
 bg_color = not in_sess ? color.new(#0d1b2a, 90) : trend_up and trending ? color.new(#00e676, 95) : trend_dn and trending ? color.new(#ff1744, 95) : color.new(#7c4dff, 97)

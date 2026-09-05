@@ -52,6 +52,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--slippage-ticks", type=float, default=1.0)
     ap.add_argument("--max-trades", type=int, default=5)
     ap.add_argument("--max-dd-pct", type=float, default=3.5)
+    ap.add_argument("--initial-capital", type=float, default=50000.0)
     return ap
 
 
@@ -70,6 +71,7 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
             base_qty=args.base_qty, point_value_usd=args.point_value_usd, tick_size=args.tick_size,
             commission_per_contract=args.commission_per_contract, slippage_ticks=args.slippage_ticks,
             max_trades=args.max_trades, max_dd_pct=args.max_dd_pct,
+            initial_capital=args.initial_capital,
         )
         _, s_train = simulate(df_train, p)
         _, s_test = simulate(df_test, p)
