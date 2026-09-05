@@ -27,10 +27,22 @@
 //
 //  Dibuja en el gráfico ENTRY/SL/TP de cada señal para poder operar a mano.
 //
+//  ENTRADA POR ORDEN LÍMITE (no a mercado): en cuanto una zona IFVG queda
+//  habilitada, la estrategia deja una orden límite puesta exactamente en el
+//  nivel del retest ("line"). Esa orden queda viva —igual que la pondrías vos
+//  a mano— hasta que: (a) el precio la toca y se llena ahí mismo, (b) la zona
+//  se invalida (se re-rompe o expira) y se cancela, o (c) termina la sesión.
+//  Así el precio de entrada real coincide siempre con el ENTRY dibujado, y el
+//  SL/TP calculado corresponde al riesgo que realmente se toma.
+//
 //  Para automatizar con PickMyTrade: crea una alerta sobre esta estrategia con
 //  trigger "Order fills", pegá la Webhook URL de tu panel de PickMyTrade, y en
 //  el mensaje pegá el JSON que PickMyTrade generó para tu cuenta (con
 //  {{plot("SL")}} / {{plot("TP")}} / {{strategy.market_position}} / etc.).
+//  Nota: como la entrada ahora es límite (no mercado), si automatizás con
+//  PickMyTrade revisá que su plantilla soporte "orden límite pendiente" y no
+//  solo "entrada a mercado al cierre de vela" — si no, el fill remoto puede
+//  volver a desalinearse con el SL/TP calculado aquí.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 //@version=6
@@ -142,54 +154,91 @@ minutesNow = sessHour * 60 + sessMinute
 minutesCutoff = sessionCloseHour * 60 + sessionCloseMinute
 withinSession = not useSessionClose or minutesNow < minutesCutoff
 
-// ── 4. Buscar señal de entrada (retest de la línea IFVG, un trade por zona) ─
-var float pendingSl = na
-var float pendingTp = na
-var float pendingEntry = na
-var int pendingQty = 0
-longSignal = false
-shortSignal = false
+// ── 4. Orden límite en el retest de la línea IFVG (un trade por zona) ───────
+// pendingState: "none" (libre para buscar zona) → "waiting" (orden límite
+// puesta, esperando que el precio la toque) → "open" (posición llena).
+var string pendingState = "none"
+var float  pendingSl     = na
+var float  pendingTp     = na
+var float  pendingEntry  = na
+var int    pendingQty    = 0
+var bool   pendingIsLong = na
+var Zone   pendingZone   = na
 
-if strategy.position_size == 0 and withinSession and array.size(zones) > 0
+orderPlacedLong  = false
+orderPlacedShort = false
+
+// (a) Buscar una nueva zona elegible sólo si no hay orden ni posición viva
+if pendingState == "none" and withinSession and array.size(zones) > 0
     tol = atr * touchTolAtr
     for i = 0 to array.size(zones) - 1
         z = array.get(zones, i)
         if z.active and z.flipped and not z.used
-            line = z.brokenBoundary
-            isLong = not z.supply and low <= line + tol and high >= line - tol
-            isShort = z.supply and high >= line - tol and low <= line + tol
-            if isLong or isShort
-                riskR = slAtrMult * atr
-                riskUSDPerContract = riskR * pointValueUSD
-                qty = riskUSDPerContract > 0 ? int(math.min(maxQty, math.floor(maxRiskUSD / riskUSDPerContract))) : 0
-                if qty >= 1
-                    z.used := true
-                    pendingEntry := line
-                    pendingQty := qty
-                    if isLong
-                        longSignal := true
-                        pendingSl := line - riskR
-                        pendingTp := line + rrTarget * riskR
-                    else
-                        shortSignal := true
-                        pendingSl := line + riskR
-                        pendingTp := line - rrTarget * riskR
-                    break
-                // si ni 1 contrato entra en el riesgo máximo, se descarta esta señal
-                // (no se marca z.used, así que si la zona sigue viva puede reintentarse
-                // en un retest posterior con otro ATR)
+            isLong = not z.supply
+            // entra un poco antes del borde exacto (tolerancia), igual que al
+            // detectar el "toque" — pero ahora ES el precio real de la orden límite
+            limitPrice = isLong ? z.brokenBoundary + tol : z.brokenBoundary - tol
+            riskR = slAtrMult * atr
+            riskUSDPerContract = riskR * pointValueUSD
+            qty = riskUSDPerContract > 0 ? int(math.min(maxQty, math.floor(maxRiskUSD / riskUSDPerContract))) : 0
+            if qty >= 1
+                z.used := true
+                pendingZone := z
+                pendingEntry := limitPrice
+                pendingQty := qty
+                pendingIsLong := isLong
+                if isLong
+                    pendingSl := limitPrice - riskR
+                    pendingTp := limitPrice + rrTarget * riskR
+                    orderPlacedLong := true
+                else
+                    pendingSl := limitPrice + riskR
+                    pendingTp := limitPrice - rrTarget * riskR
+                    orderPlacedShort := true
+                pendingState := "waiting"
+                break
+            // si ni 1 contrato entra en el riesgo máximo, no se marca z.used:
+            // se puede reintentar en un retest posterior con otro ATR
+
+// (b) Orden límite puesta, esperando que el precio la toque
+if pendingState == "waiting"
+    if strategy.position_size != 0
+        pendingState := "open"
+    else if not pendingZone.active or not withinSession
+        // la zona se invalidó (re-rotura o expiró) o terminó la sesión: se
+        // cancela la orden límite sin haberse llenado
+        strategy.cancel(pendingIsLong ? "Long" : "Short")
+        pendingState := "none"
+        pendingZone := na
+        pendingSl := na
+        pendingTp := na
+        pendingEntry := na
+        pendingQty := 0
+
+// (c) Posición abierta: mantener el bracket SL/TP calculado sobre el precio
+// real de llenado (que es "pendingEntry", porque se llenó exactamente en el
+// límite puesto en (a))
+if pendingState == "open"
+    strategy.exit(pendingIsLong ? "Salida Long" : "Salida Short",
+         pendingIsLong ? "Long" : "Short",
+         stop = pendingSl, limit = pendingTp)
+    if strategy.position_size == 0
+        pendingState := "none"
+        pendingZone := na
+        pendingSl := na
+        pendingTp := na
+        pendingEntry := na
+        pendingQty := 0
 
 // ── 5. Ejecutar ──────────────────────────────────────────────────────────────
 // El mensaje de la alerta NO se define acá — se configura una sola vez en el
 // diálogo de alerta de TradingView (trigger "Order fills"), pegando el JSON
 // que genera PickMyTrade.
-if longSignal
-    strategy.entry("Long", strategy.long, qty = pendingQty)
-    strategy.exit("Salida Long", "Long", stop = pendingSl, limit = pendingTp)
+if orderPlacedLong
+    strategy.entry("Long", strategy.long, qty = pendingQty, limit = pendingEntry)
 
-if shortSignal
-    strategy.entry("Short", strategy.short, qty = pendingQty)
-    strategy.exit("Salida Short", "Short", stop = pendingSl, limit = pendingTp)
+if orderPlacedShort
+    strategy.entry("Short", strategy.short, qty = pendingQty, limit = pendingEntry)
 
 // ── 6. Cierre forzado de fin de sesión (regla "no overnight") ───────────────
 if useSessionClose and not withinSession and strategy.position_size != 0
@@ -197,24 +246,27 @@ if useSessionClose and not withinSession and strategy.position_size != 0
 
 // ── 7. Visualización — cajas ENTRY→TP (verde) / ENTRY→SL (roja), como la
 // herramienta nativa "Long/Short Position" de TradingView, para operar a mano.
-// La caja de la operación abierta se estira barra a barra; en cuanto el precio
-// toca el SL o el TP (strategy.position_size vuelve a 0) deja de estirarse y
-// queda congelada ahí — así se ve exactamente dónde cerró.
+// La caja se estira barra a barra durante todo el ciclo (orden límite puesta
+// → llenada → posición abierta) y se congela cuando el ciclo termina (se
+// cerró en SL/TP/cierre de sesión, o la orden se canceló sin llenarse).
 var array<box> profitBoxes  = array.new<box>()
 var array<box> riskBoxes    = array.new<box>()
 var array<line> entryLines  = array.new<line>()
 var array<label> tradeLabels = array.new<label>()
-var bool lastTradeOpen = false
+var bool tradeCycleActive = false
 
-if showLevels and lastTradeOpen and array.size(profitBoxes) > 0
+// se sigue estirando mientras la orden está puesta (esperando el retest) y
+// mientras la posición sigue abierta; se congela recién cuando todo el ciclo
+// termina (se llenó y cerró, o se canceló sin llenarse)
+if showLevels and tradeCycleActive and array.size(profitBoxes) > 0
     box.set_right(array.get(profitBoxes, array.size(profitBoxes) - 1), bar_index)
     box.set_right(array.get(riskBoxes, array.size(riskBoxes) - 1), bar_index)
     line.set_x2(array.get(entryLines, array.size(entryLines) - 1), bar_index)
-    if strategy.position_size == 0
-        lastTradeOpen := false
+    if pendingState == "none"
+        tradeCycleActive := false
 
-if showLevels and (longSignal or shortSignal)
-    isLong = longSignal
+if showLevels and (orderPlacedLong or orderPlacedShort)
+    isLong = orderPlacedLong
     colProfitBg   = color.new(color.green, 85)
     colRiskBg     = color.new(color.red, 85)
     colProfitLine = color.new(color.green, 0)
@@ -243,7 +295,7 @@ if showLevels and (longSignal or shortSignal)
     array.push(riskBoxes, bRisk)
     array.push(entryLines, lEntry)
     array.push(tradeLabels, lbl)
-    lastTradeOpen := true
+    tradeCycleActive := true
 
     if array.size(profitBoxes) > maxLevelsShown
         box.delete(array.shift(profitBoxes))
