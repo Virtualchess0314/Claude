@@ -1,0 +1,10 @@
+                         escenario  comision_rt_usd  slippage_ticks  avg_qty  train_pf  train_wr  test_trades  test_pf  test_wr  test_expectancy_r  test_net_pnl_usd
+             Sin costos (ya visto)            0.000           0.000    7.065     2.342     0.603           31    2.696    0.613              0.524          5136.440
+Sólo CME+NFA (~$0.74 RT, estimado)            0.740           0.000    7.065     2.288     0.603           31    2.611    0.613              0.506          4974.380
+        Bajo (~$1.30 RT, estimado)            1.300           0.500    7.065     2.237     0.603           31    2.533    0.613              0.491          4831.740
+       Medio (~$2.00 RT, estimado)            2.000           1.000    7.065     2.178     0.603           31    2.443    0.613              0.472          4658.440
+        Alto (~$3.50 RT, estimado)            3.500           1.000    7.065     2.079     0.603           31    2.293    0.613              0.436          4329.940
+    Muy alto (~$5.00 RT, estimado)            5.000           1.500    7.065     1.976     0.603           31    2.142    0.613              0.398          3981.440
+
+Buscando el punto de equilibrio (PF test = 1.0) con barrido fino de comisión...
+Con 1 tick de slippage en salidas de mercado, el profit factor de TEST cruza 1.0 (breakeven) en ~$23.27 de comisión round-turn por contrato.

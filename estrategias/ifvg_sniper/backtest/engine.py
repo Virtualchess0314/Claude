@@ -61,6 +61,17 @@ class Params:
     # siempre). Idea: operar el retest IFVG sólo a favor de la tendencia mayor.
     trend_ema_len: Optional[int] = None
 
+    # ── Costos reales ────────────────────────────────────────────────────
+    # comisión "round-turn" (ida + vuelta) por contrato, en USD: comisión del
+    # bróker/Tradovate + fee de CME + fee regulatorio NFA, todo junto.
+    commission_round_turn_usd: float = 0.0
+    # slippage en ticks, aplicado SOLO a salidas que en la vida real serían
+    # orden de mercado/stop (SL y cierre forzado de sesión) — la entrada y el
+    # TP son órdenes límite, no deberían sufrir slippage si el motor de la
+    # cuenta las respeta como tales.
+    slippage_ticks: float = 0.0
+    tick_size: float = 0.25  # MNQ = 0.25 puntos de índice por tick
+
 
 @dataclass
 class Zone:
@@ -202,6 +213,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 hit_sl = h[i] >= pending_sl
                 hit_tp = l[i] <= pending_tp
 
+            slip = p.slippage_ticks * p.tick_size
             if hit_sl:
                 exit_price, reason = pending_sl, "SL"
             elif hit_tp:
@@ -211,7 +223,14 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
 
             if exit_price is not None:
                 direction = 1 if pending_is_long else -1
-                pnl_usd = direction * (exit_price - entry_price) * pending_qty * p.point_value_usd
+                if reason in ("SL", "sesion"):
+                    # salidas "de mercado" en la práctica: el slippage juega
+                    # siempre en contra (peor precio del que apuntabas)
+                    exit_price = exit_price - direction * slip
+
+                gross_pnl_usd = direction * (exit_price - entry_price) * pending_qty * p.point_value_usd
+                commission_usd = p.commission_round_turn_usd * pending_qty
+                pnl_usd = gross_pnl_usd - commission_usd
                 risk_usd = p.sl_atr_mult * atr[entry_bar] * pending_qty * p.point_value_usd
                 trades.append(
                     {
@@ -222,6 +241,8 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         "exit": exit_price,
                         "qty": pending_qty,
                         "reason": reason,
+                        "gross_pnl_usd": gross_pnl_usd,
+                        "commission_usd": commission_usd,
                         "pnl_usd": pnl_usd,
                         "r_multiple": pnl_usd / risk_usd if risk_usd > 0 else np.nan,
                         "bars_held": i - entry_bar,

@@ -116,6 +116,39 @@ sentido: esta estrategia es de reversión (opera el rechazo en una zona ya
 invertida), así que forzar alineación con una tendencia mayor filtra
 justamente las mejores señales de reversión. No se expone en el `.pine`.
 
+## Comisión y slippage (`cost_sensitivity.py`)
+
+```bash
+python3 cost_sensitivity.py tus_datos.csv
+```
+
+Este entorno no tiene salida a internet para confirmar la tarifa vigente de
+Tradeify/Tradovate/CME, así que en vez de asumir un número exacto (y quizás
+equivocado), el script corre la config actual con varios escenarios de
+comisión "round-turn" por contrato (bróker + CME + NFA todo junto) y de
+slippage, en train y test por separado. Ver
+`runs/2026-09-05_mnq5m_cost_sensitivity.txt` para la corrida completa.
+
+**Resultado con MNQ 5m (jul-sep 2026):** el tamaño de posición típico de
+esta config es ~7 contratos (con `maxRiskUSD=300` y un SL de 0.75×ATR, el
+ATR mediano de ~26 puntos da un riesgo de ~$40/contrato → 300/40 ≈ 7). Con
+eso, el punto de equilibrio (profit factor de test = 1.0, con 1 tick de
+slippage en salidas de mercado) está en **~$23 de comisión round-turn por
+contrato** — muy por encima de cualquier tarifa real esperable para MNQ
+(exchange+regulatorio solos rondan ~$0.74 RT; con el markup del bróker,
+normalmente no debería pasar de unos pocos dólares). El edge parece
+robusto a costos, pero:
+
+1. **El número de referencia sigue sin confirmar** — hay que sacarlo de la
+   propia cuenta de Tradovate (aparece en cualquier orden ejecutada, o en
+   Configuración → Cuenta → Comisiones) para reemplazar los escenarios
+   estimados de `SCENARIOS` en `cost_sensitivity.py` por el real.
+2. **~7 contratos de MNQ en una cuenta de 50k es una cifra a revisar contra
+   las reglas de Tradeify** — muchas cuentas fondeadas limitan la cantidad
+   de contratos (o el riesgo por posición) según el tamaño de cuenta,
+   independientemente de lo que diga el backtest. Confirmá el límite de
+   contratos de tu plan antes de operar este `maxRiskUSD` en real.
+
 ## Limitaciones a tener en cuenta
 
 - Si en la misma vela se tocan SL y TP, el motor asume que el SL se ejecutó
