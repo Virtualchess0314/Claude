@@ -40,3 +40,17 @@ def load_csv(path: str, tz: str = "UTC") -> pd.DataFrame:
     if tz != "UTC":
         df.index = df.index.tz_convert(tz)
     return df
+
+
+def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """
+    Agrupa velas más chicas en velas más grandes (ej. 5m -> 10m agrupando de
+    a 2). Sólo válido cuando el timeframe pedido es múltiplo exacto del
+    original — para timeframes que no lo son (ej. 3m a partir de 5m) hace
+    falta un CSV nativo de ese timeframe, no se puede derivar sin inventar
+    datos.
+    """
+    out = df.resample(rule, label="left", closed="left").agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last"}
+    )
+    return out.dropna(subset=["open", "high", "low", "close"])

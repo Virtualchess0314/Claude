@@ -1,0 +1,43 @@
+IFVG Sniper — optimización en MNQ 10m (derivado de 5m, jul-sep 2026)
+=====================================================================
+
+10m se generó agregando pares de velas de 5m (resample_ohlc en data.py),
+no es un export nuevo de TradingView. 5520 velas totales, train 70% (3863)
+/ test 30% (1657).
+
+Barrido core (min_gap_atr, sl_atr_mult, rr_target), sin ventana horaria,
+buffer 0.05 (default viejo):
+  Mejor combinación consistente: min_gap_atr=0.75, sl_atr_mult=0.75,
+  rr_target=1.0 -> train PF 1.76 (62% WR) / test PF 2.84 (74% WR, 19 trades)
+
+Con clean_break_buffer_atr 0.05->0.10 (misma mejora que en 5m):
+  train PF 1.76->2.03, test PF 2.84->1.98 (ambos altos y ahora más
+  parecidos entre sí — más consistente, no menos).
+
+Ventana horaria NY 08-16 ET (la que tanto ayudó en 5m) -> PROBADA Y
+DESCARTADA en 10m: empeora a negativo (test PF 0.93, expectancy -0.05R,
+13 trades). Confirma que los filtros no se pueden copiar de un timeframe
+a otro sin re-validar — cada uno tiene su propia dinámica.
+
+R:R en 10m (con buffer 0.10, sin ventana horaria):
+  RR 1.0 -> train PF 2.03 test PF 1.98 (el más consistente)
+  RR 1.5 -> train PF 2.12 test PF 1.20 (se cae en test)
+  RR 2.0 -> train PF 1.32 test PF 1.00 (breakeven en test)
+
+CONFIG FINAL 10m: min_gap_atr=0.75, sl_atr_mult=0.75, rr_target=1.0,
+clean_break_buffer_atr=0.10, SIN ventana horaria, maxRiskUSD=300,
+maxQty=40, comisión $3.50 RT + 1 tick slippage.
+
+Resultado sobre el dataset completo (10m):
+  84 trades, PF 2.12, winrate 69%, expectancy 0.34R,
+  neto $7.776, drawdown máximo -$960, duración promedio ~10.6 min.
+
+Comparación rápida contra 5m (su propia config óptima, mismo período,
+mismo riesgo y comisión):
+  5m  (RR1.5, ventana NY, buffer 0.10): 95 trades, PF 2.09, WR 60%,
+      neto $11.590, dd -$1.623
+  10m (RR1.0, 24h,        buffer 0.10): 84 trades, PF 2.12, WR 69%,
+      neto  $7.776, dd   -$960
+
+Ojo: la muestra de test en 10m es chica (19 trades) — bastante más
+ruidosa que los 31 de test en 5m. Tomar esto con más cautela.
