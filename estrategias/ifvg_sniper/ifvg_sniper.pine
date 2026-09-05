@@ -35,14 +35,8 @@
 //  Así el precio de entrada real coincide siempre con el ENTRY dibujado, y el
 //  SL/TP calculado corresponde al riesgo que realmente se toma.
 //
-//  Para automatizar con PickMyTrade: crea una alerta sobre esta estrategia con
-//  trigger "Order fills", pegá la Webhook URL de tu panel de PickMyTrade, y en
-//  el mensaje pegá el JSON que PickMyTrade generó para tu cuenta (con
-//  {{plot("SL")}} / {{plot("TP")}} / {{strategy.market_position}} / etc.).
-//  Nota: como la entrada ahora es límite (no mercado), si automatizás con
-//  PickMyTrade revisá que su plantilla soporte "orden límite pendiente" y no
-//  solo "entrada a mercado al cierre de vela" — si no, el fill remoto puede
-//  volver a desalinearse con el SL/TP calculado aquí.
+//  Uso: 100% manual por ahora. Poné vos la orden límite en el nivel ENTRY que
+//  dibuja el gráfico, con el SL y TP indicados en la etiqueta de la señal.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 //@version=6
@@ -231,9 +225,6 @@ if pendingState == "open"
         pendingQty := 0
 
 // ── 5. Ejecutar ──────────────────────────────────────────────────────────────
-// El mensaje de la alerta NO se define acá — se configura una sola vez en el
-// diálogo de alerta de TradingView (trigger "Order fills"), pegando el JSON
-// que genera PickMyTrade.
 if orderPlacedLong
     strategy.entry("Long", strategy.long, qty = pendingQty, limit = pendingEntry)
 
@@ -306,8 +297,3 @@ if showLevels and (orderPlacedLong or orderPlacedShort)
 // ── Otros indicadores visuales ────────────────────────────────────────────────
 plot(atr, "ATR (referencia)", color = color.gray, display = display.data_window)
 bgcolor(withinSession ? na : color.new(color.red, 90), title = "Fuera de sesión permitida")
-
-// ── Plots ocultos: exponen el SL/TP calculado para que PickMyTrade lo lea vía
-// el placeholder {{plot("SL")}} / {{plot("TP")}} en el mensaje de la alerta ──
-plot(pendingSl, "SL", display = display.none)
-plot(pendingTp, "TP", display = display.none)
