@@ -1,0 +1,41 @@
+IFVG Sniper — entrada más profunda (SL/TP fijos), MNQ 5m y 3m
+=====================================================================
+
+Idea probada: en vez de poner la orden límite en el nivel de retest de
+siempre, ponerla entry_shift_frac × riesgo más adentro de la zona (más
+cerca de donde iría el SL). El SL y el TP quedan en el MISMO nivel de
+precio que hubieran tenido con la entrada original -no se recalculan.
+Esto reduce el riesgo real y agranda la recompensa real de cualquier
+operación que efectivamente llegue a ese precio más profundo.
+
+Implementado en engine.py como `entry_shift_frac` (0.0 = comportamiento
+original, verificado sin regresión).
+
+RESULTADO: no conviene, en ninguno de los dos timeframes, salvo quizás
+un shift muy chico en 3m.
+
+5m (config vigente, min_gap=0.75/sl=0.75/rr=1.5, buffer=0.10, ventana NY):
+  shift=0.00  95 trades  PF 2.09  WR 60.0%  exp 0.45R  neto $11.590  dd -$1.623
+  shift=0.25  86 trades  PF 1.37  WR 40.7%  exp 0.21R  neto  $5.647  dd -$1.993
+  shift=0.50  73 trades  PF 1.30  WR 30.1%  exp 0.14R  neto  $4.955  dd -$4.190
+  shift=0.75  71 trades  PF 1.32  WR 19.7%  exp 0.09R  neto  $7.035  dd -$5.385
+
+3m (config óptima 3m, min_gap=0.50/sl=1.00/rr=1.0, sin ventana):
+  shift=0.00  348 trades  PF 1.38  WR 62.4%  exp 0.23R  neto $14.886  dd  -$2.015
+  shift=0.25  301 trades  PF 1.40  WR 50.8%  exp 0.30R  neto $19.147  dd  -$2.291  (única mejora, leve)
+  shift=0.50  240 trades  PF 1.20  WR 35.0%  exp 0.21R  neto $11.140  dd  -$5.722
+  shift=0.75  204 trades  PF 1.17  WR 21.6%  exp -0.09R neto $10.801  dd -$13.448
+
+Por qué empeora: exigir que el precio baje más antes de entrar filtra
+afuera justo las operaciones más limpias (las que van directo al TP sin
+retroceder, ~40-44% de las ganadoras según el análisis de MAE previo) y
+deja proporcionalmente más retests que en realidad eran el comienzo de
+una rotura real de la zona, no un rebote. El R:R por operación mejora,
+pero el winrate se derrumba mucho más de lo que compensa -peor en casi
+toda la escala, y sustancialmente peor en drawdown.
+
+Único punto con mejora real: shift=0.25 en 3m (PF y expectancy algo más
+altos, neto +$4.260). No validado train/test todavía -si se quiere
+perseguir, habría que confirmarlo con esa partición antes de creerlo.
+
+No se llevó al .pine (sin mejora robusta que justifique el cambio).

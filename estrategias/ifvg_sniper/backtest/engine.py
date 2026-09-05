@@ -87,6 +87,16 @@ class Params:
     # más frecuente, así que conviene mirar ambas cotas, no sólo una.
     tie_break: str = "sl_first"
 
+    # Entrada "más profunda": en vez de poner la orden límite justo en el
+    # nivel de retest, se pone entry_shift_frac × (sl_atr_mult×ATR) más
+    # adentro de la zona (más cerca de donde iría el SL). El SL y el TP
+    # quedan en el MISMO nivel de precio que hubieran tenido con la entrada
+    # original (no se recalculan) — así que entrar más profundo reduce el
+    # riesgo real y agranda la recompensa real de cualquier operación que
+    # efectivamente llegue a ese precio, a costa de perderse las que van
+    # directo al TP sin bajar tanto. 0.0 = comportamiento original.
+    entry_shift_frac: float = 0.0
+
 
 @dataclass
 class Zone:
@@ -276,12 +286,17 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 gross_pnl_usd = direction * (exit_price - entry_price) * pending_qty * p.point_value_usd
                 commission_usd = p.commission_round_turn_usd * pending_qty
                 pnl_usd = gross_pnl_usd - commission_usd
-                risk_usd = p.sl_atr_mult * atr[entry_bar] * pending_qty * p.point_value_usd
+
+                # riesgo REAL de esta operación puntual: distancia entrada->SL
+                # tal cual se llenó (si hay entry_shift_frac > 0, es MENOR al
+                # "de catálogo" sl_atr_mult*atr, porque se entró más profundo
+                # con el mismo SL de siempre).
+                risk_dist = abs(entry_price - pending_sl)
+                risk_usd = risk_dist * pending_qty * p.point_value_usd
 
                 # MAE/MFE: qué tan cerca llegó el precio del SL o del TP
                 # contrarios ANTES de cerrar, sin importar cómo cerró al final
                 # (aproximado con máximos/mínimos de vela, no con datos de tick).
-                risk_dist = abs(entry_price - pending_sl)
                 reward_dist = abs(pending_tp - entry_price)
                 mae_dist = abs(entry_price - worst_since_entry)
                 mfe_dist = abs(best_since_entry - entry_price)
@@ -326,9 +341,18 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         aligned = (c[i] > trend_ema[i]) if is_long else (c[i] < trend_ema[i])
                         if not aligned:
                             continue
-                    limit_price = z.broken_boundary + tol if is_long else z.broken_boundary - tol
+                    # nivel de confirmación "de catálogo" (comportamiento original)
+                    catalog_entry = z.broken_boundary + tol if is_long else z.broken_boundary - tol
                     risk_r = p.sl_atr_mult * a
-                    risk_usd_per_contract = risk_r * p.point_value_usd
+                    sl_level = catalog_entry - risk_r if is_long else catalog_entry + risk_r
+                    tp_level = catalog_entry + p.rr_target * risk_r if is_long else catalog_entry - p.rr_target * risk_r
+
+                    # entrada real: opcionalmente más profunda, SL/TP fijos
+                    shift = p.entry_shift_frac * risk_r
+                    limit_price = catalog_entry - shift if is_long else catalog_entry + shift
+                    actual_risk_r = abs(limit_price - sl_level)
+
+                    risk_usd_per_contract = actual_risk_r * p.point_value_usd
                     qty = (
                         int(min(p.max_qty, np.floor(p.max_risk_usd / risk_usd_per_contract)))
                         if risk_usd_per_contract > 0
@@ -340,12 +364,8 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         pending_is_long = is_long
                         pending_limit = limit_price
                         pending_qty = qty
-                        if is_long:
-                            pending_sl = limit_price - risk_r
-                            pending_tp = limit_price + p.rr_target * risk_r
-                        else:
-                            pending_sl = limit_price + risk_r
-                            pending_tp = limit_price - p.rr_target * risk_r
+                        pending_sl = sl_level
+                        pending_tp = tp_level
                         state = "waiting"
                         orders_placed += 1
                         break
