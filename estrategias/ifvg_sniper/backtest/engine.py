@@ -72,6 +72,21 @@ class Params:
     slippage_ticks: float = 0.0
     tick_size: float = 0.25  # MNQ = 0.25 puntos de índice por tick
 
+    # ── Breakeven-stop opcional ─────────────────────────────────────────
+    # Cuando el precio recorre esta fracción del camino hacia el TP (medido
+    # sobre el máximo favorable alcanzado, no sólo el cierre), el SL se
+    # mueve a breakeven (+ buffer opcional) y ya no vuelve atrás. None =
+    # desactivado (comportamiento original, SL fijo todo el trade).
+    breakeven_trigger_frac: Optional[float] = None
+    breakeven_buffer_ticks: float = 0.0
+
+    # Cómo resolver una vela que toca SL y TP a la vez (no sabemos el orden
+    # real intrabar con datos OHLC de 5m). "sl_first" es el supuesto
+    # conservador de siempre; "tp_first" da la cota optimista — con un SL
+    # tan cerca del precio como el breakeven, este empate se vuelve mucho
+    # más frecuente, así que conviene mirar ambas cotas, no sólo una.
+    tie_break: str = "sl_first"
+
 
 @dataclass
 class Zone:
@@ -139,6 +154,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     pending_qty = 0
     worst_since_entry = np.nan  # low más bajo (long) / high más alto (short) desde que abrió
     best_since_entry = np.nan   # high más alto (long) / low más bajo (short) desde que abrió
+    moved_to_be = False
 
     trades = []
     orders_placed = 0
@@ -195,6 +211,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     orders_filled += 1
                     worst_since_entry = l[i]
                     best_since_entry = h[i]
+                    moved_to_be = False
             else:
                 if h[i] >= pending_limit:
                     entry_price = max(pending_limit, o[i]) if o[i] >= pending_limit else pending_limit
@@ -203,6 +220,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     orders_filled += 1
                     worst_since_entry = h[i]
                     best_since_entry = l[i]
+                    moved_to_be = False
 
             if state == "waiting" and (not pending_zone.active or not within):
                 state = "none"
@@ -217,6 +235,18 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 worst_since_entry = max(worst_since_entry, h[i])
                 best_since_entry = min(best_since_entry, l[i])
 
+            if p.breakeven_trigger_frac is not None and not moved_to_be:
+                reward_dist = abs(pending_tp - entry_price)
+                progressed = abs(best_since_entry - entry_price)
+                if reward_dist > 0 and progressed / reward_dist >= p.breakeven_trigger_frac:
+                    buf = p.breakeven_buffer_ticks * p.tick_size
+                    new_sl = entry_price + buf if pending_is_long else entry_price - buf
+                    # sólo mover si es una mejora real (más cerca del precio, nunca más lejos)
+                    better = new_sl > pending_sl if pending_is_long else new_sl < pending_sl
+                    if better:
+                        pending_sl = new_sl
+                    moved_to_be = True
+
             exit_price = None
             reason = None
             if pending_is_long:
@@ -227,8 +257,10 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 hit_tp = l[i] <= pending_tp
 
             slip = p.slippage_ticks * p.tick_size
+            if hit_sl and hit_tp and p.tie_break == "tp_first":
+                hit_sl = False  # cota optimista: en el empate, gana el TP
             if hit_sl:
-                exit_price, reason = pending_sl, "SL"
+                exit_price, reason = pending_sl, ("BE" if moved_to_be else "SL")
             elif hit_tp:
                 exit_price, reason = pending_tp, "TP"
             elif not within:
@@ -236,7 +268,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
 
             if exit_price is not None:
                 direction = 1 if pending_is_long else -1
-                if reason in ("SL", "sesion"):
+                if reason in ("SL", "BE", "sesion"):
                     # salidas "de mercado" en la práctica: el slippage juega
                     # siempre en contra (peor precio del que apuntabas)
                     exit_price = exit_price - direction * slip

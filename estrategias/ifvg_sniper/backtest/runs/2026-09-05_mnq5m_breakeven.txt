@@ -1,0 +1,39 @@
+IFVG Sniper — breakeven-stop, MNQ 5m: no se puede probar con confianza
+=====================================================================
+
+Implementado en engine.py: breakeven_trigger_frac (mueve el SL a
+breakeven cuando el precio recorre X% del camino al TP, medido sobre
+el máximo favorable alcanzado) y tie_break ("sl_first"/"tp_first",
+para acotar el resultado cuando una vela toca SL y TP a la vez).
+
+Primer resultado (trigger=0.5, empate a favor del SL como siempre):
+catastrófico -PF cae de 2.09 a 0.50, ganadoras (TP) caen de 54 a 5.
+Antes de aceptarlo se revisó a fondo: no es un bug. El problema es que
+mover el SL a breakeven lo deja MUY cerca del precio de entrada, así
+que "esta misma vela también tocó el stop" se vuelve verdad casi
+cualquier vela con rango decente -mucho más seguido que con el SL
+original, mucho más ancho.
+
+De 52 stops en breakeven (trigger=0.9), 46 (88%) tienen bars_held=0:
+entraron y salieron en la MISMA vela de 5m, que tuvo rango suficiente
+para tocar tanto el 90% del camino al TP como el nuevo SL -no sabemos
+cuál pasó primero de verdad. Sólo 6 son reversiones multi-vela genuinas.
+
+Corriendo las dos cotas posibles (asumir que gana el SL vs. asumir que
+gana el TP cuando ambos se tocan en la misma vela):
+
+  trigger=0.90:  pesimista PF 0.74  |  optimista PF 3.23
+  trigger=0.75:  pesimista PF 0.61  |  optimista PF 3.12
+  trigger=0.50:  pesimista PF 0.50  |  optimista PF 4.42
+
+El rango entre cotas es demasiado amplio para sacar ninguna conclusión
+-la respuesta real puede estar en cualquier punto entre "empeora mucho"
+y "mejora mucho". Esto pasa porque las operaciones de esta estrategia
+duran en promedio ~1.65 velas de 5m (~8 min): casi toda la vida del
+trade cabe en 1-2 velas, justo donde vive la ambigüedad de OHLC.
+
+CONCLUSIÓN: no se puede evaluar el breakeven-stop con confianza usando
+datos de 5 minutos para esta estrategia en particular (trades
+demasiado rápidos). Haría falta historial de 1 minuto (o tick) para
+achicar la ventana de ambigüedad. Queda implementado en el motor para
+cuando se consiga ese historial. No se llevó al .pine.
