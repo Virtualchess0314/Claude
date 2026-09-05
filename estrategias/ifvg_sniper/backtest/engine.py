@@ -45,7 +45,7 @@ class Params:
     rr_target: float = 1.0
     max_risk_usd: float = 150.0
     point_value_usd: float = 2.0
-    max_qty: int = 20
+    max_qty: int = 40  # límite real confirmado de la cuenta de 50k de Tradeify (micros)
     use_session_close: bool = True
     session_tz: str = "America/New_York"
     session_close_hour: int = 16

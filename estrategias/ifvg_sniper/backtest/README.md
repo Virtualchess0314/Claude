@@ -146,10 +146,34 @@ promedio de esta config es ~5-7 contratos (con `maxRiskUSD=300` y SL de
 0.75×ATR sobre un ATR mediano de ~26 puntos → ~$40 de riesgo/contrato →
 300/40 ≈ 7), lo que a $3.50/contrato es ~$20-25 de comisión por operación.
 
-**Pendiente de tu lado:** confirmar el límite de contratos que permite tu
-cuenta de 50k de Tradeify — muchas cuentas fondeadas limitan la cantidad de
-contratos (o el riesgo por posición) según el tamaño de cuenta,
-independientemente de lo que diga el backtest.
+**Límite de contratos confirmado: 40 micros** (cuenta de 50k de Tradeify).
+`max_qty` en `engine.py` y `maxQty` en el `.pine` se actualizaron de 20
+(tope arbitrario puesto sin saber el límite real) a 40. Con este límite
+real, ninguna operación llega a tocarlo ni con `maxRiskUSD=300` ni con 500
+(máximo visto: 22 contratos) — hay margen cómodo.
+
+## R:R 1:1 vs 1:1.5, y maxRiskUSD 300 vs 500
+
+Con comisión real ($3.50 RT) y `maxQty=40`:
+
+| maxRiskUSD | R:R | Trades | PF | Winrate | Expectancy | Neto | Drawdown | Duración |
+|---|---|---|---|---|---|---|---|---|
+| 300 | 1:1 | 97 | 2.09 | **70.1%** | 0.34R | $9.145 | -$1.305 | ~3 min |
+| 300 | 1:1.5 (vigente en el `.pine`) | 95 | 2.09 | 60.0% | 0.42R | $11.590 | -$1.623 | ~8.5 min |
+| 500 | 1:1 | 97 | 2.08 | **70.1%** | 0.34R | $15.575 | -$2.246 | ~3 min |
+| 500 | 1:1.5 | 95 | 2.04 | 60.0% | 0.42R | $19.288 | -$2.839 | ~8.5 min |
+
+Trade-offs a decidir según prioridad, no hay un lado objetivamente mejor:
+- **1:1** da más winrate y menor drawdown, pero menos plata neta y
+  duración de trade mucho más corta (~3 min) — más cerca del límite de
+  "alta frecuencia" que penalizan las cuentas fondeadas.
+- **1:1.5** da más expectancy y más plata neta, con trades más espaciados
+  (~8.5 min), a costa de menor winrate y mayor drawdown.
+- Subir `maxRiskUSD` de 300 a 500 escala el resultado casi proporcionalmente
+  (más plata, más drawdown en dólares) sin cambiar PF/winrate — es
+  apalancamiento, no una mejora real de la estrategia. Confirmá que tu
+  cuenta tolera un drawdown de ~$2.800 (peor caso visto, 1:1.5 a $500)
+  dentro de sus reglas de pérdida máxima antes de subir el riesgo.
 
 ## Limitaciones a tener en cuenta
 

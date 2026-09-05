@@ -70,9 +70,9 @@ rrTarget          = input.float(1.5, "Take Profit en R (ej. 1 = 1:1)", step = 0.
 maxRiskUSD        = input.float(300, "Riesgo máximo por operación (USD)", step = 10, group = g2,
      tooltip = "El tamaño de posición se ajusta para que CADA operación arriesgue este mismo monto, sin importar qué tan ancho sea el SL calculado. Si ni 1 contrato entra en este riesgo, la señal se descarta.")
 pointValueUSD     = input.float(2.0, "Valor en USD por punto de índice", step = 0.5, group = g2,
-     tooltip = "MNQ (Micro Nasdaq) = 2. NQ (Nasdaq completo) = 20. Ajustá según el contrato real que operás en Lucid.")
-maxQty            = input.int(20, "Tope de contratos por seguridad", group = g2,
-     tooltip = "Límite duro para evitar un tamaño de posición absurdo si el ATR es anormalmente chico.")
+     tooltip = "MNQ (Micro Nasdaq) = 2. NQ (Nasdaq completo) = 20. Ajustá según el contrato real que operás en Tradeify/Tradovate.")
+maxQty            = input.int(40, "Tope de contratos por seguridad", group = g2,
+     tooltip = "40 = límite real confirmado de micros para la cuenta de 50k de Tradeify. Es un límite duro de la cuenta, no una sugerencia — bajalo si tu firma te da un número distinto, y NUNCA lo subas por encima de lo que tu cuenta realmente permite.")
 
 g3 = "Regla de cuenta fondeada — sin overnight"
 useSessionClose   = input.bool(true, "Forzar cierre antes de fin de sesión", group = g3)
