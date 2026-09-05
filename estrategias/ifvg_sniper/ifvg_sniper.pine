@@ -317,3 +317,31 @@ if showLevels and (orderPlacedLong or orderPlacedShort)
 plot(atr, "ATR (referencia)", color = color.gray, display = display.data_window)
 bgcolor(withinSession ? na : color.new(color.red, 90), title = "Fuera de sesión permitida")
 bgcolor(withinSession and not withinEntryWindow ? color.new(color.orange, 92) : na, title = "Fuera de ventana horaria de entrada")
+
+// ── Alertas ──────────────────────────────────────────────────────────────────
+// IMPORTANTE: la alerta genérica "Order fills" de TradingView se dispara
+// cuando el precio YA TOCÓ el nivel y la orden límite ya se llenó en la
+// simulación — para cuando te llega la notificación, el precio ya se movió,
+// y para cuando cargás la orden en tu bróker, se movió todavía más.
+//
+// Estas alertas de acá disparan en el momento en que se DECIDE la señal
+// (orderPlacedLong/orderPlacedShort), que es ANTES de que el precio toque
+// el nivel de retest — con tiempo de sobra para cargar una orden LÍMITE de
+// verdad en tu bróker, que se llena sola cuando el precio llegue. Al crear
+// la alerta en TradingView, elegí "Any alert() function call" como
+// disparador (no "Order fills") para que uses estas, no la genérica.
+if orderPlacedLong
+    alert("IFVG LONG — Entry " + str.tostring(pendingEntry, format.mintick) +
+         " | SL " + str.tostring(pendingSl, format.mintick) +
+         " | TP " + str.tostring(pendingTp, format.mintick) +
+         " | Qty " + str.tostring(pendingQty) +
+         " — cargar orden LÍMITE ya (el precio todavía no tocó el nivel).",
+         alert.freq_once_per_bar)
+
+if orderPlacedShort
+    alert("IFVG SHORT — Entry " + str.tostring(pendingEntry, format.mintick) +
+         " | SL " + str.tostring(pendingSl, format.mintick) +
+         " | TP " + str.tostring(pendingTp, format.mintick) +
+         " | Qty " + str.tostring(pendingQty) +
+         " — cargar orden LÍMITE ya (el precio todavía no tocó el nivel).",
+         alert.freq_once_per_bar)
