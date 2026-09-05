@@ -1,0 +1,35 @@
+IFVG Sniper — scale-in "al revés" (contrato extra al +25%/+50% hacia el TP)
+=====================================================================
+
+Opuesto al scale-in anterior: en vez de agregar contrato cuando el
+precio retrocede hacia el SL, agregarlo cuando avanza a favor (hacia
+el TP). SL/TP originales no cambian, el contrato extra entra más cerca
+del TP (peor R:R individual que el original: menos recompensa
+restante, más riesgo restante hasta el SL).
+
+Advertencia matemática de partida (confirmada): toda ganadora pasa por
+el 25%/50% hacia el TP por definición, y ya sabíamos que ~87-90% de
+las perdedoras TAMBIÉN llegan ahí antes de revertir. Entonces el gatillo
+se activa casi siempre (90-96% de las operaciones), sin distinguir
+bien entre ganadoras y perdedoras.
+
+Implementado en engine.py: scale_in_fav_trigger_frac + scale_in_fav_add_qty.
+
+RESULTADO: consistentemente PEOR en los 4 escenarios (trigger=0.25):
+
+  5m  train:  PF 2.08->1.87  neto $7.553->$7.946 (+5%)   dd -$1.623->-$2.299 (+42%)
+  5m  test:   PF 2.29->2.11  neto $4.330->$4.493 (+4%)   dd -$1.205->-$1.381 (+15%)
+  3m  train:  PF 1.30->1.24  neto $8.269->$7.680 (-7%)   dd -$2.015->-$2.965 (+47%)
+  3m  test:   PF 1.58->1.51  neto $6.707->$6.592 (-2%)   dd -$1.276->-$1.461 (+15%)
+
+A diferencia del scale-in "adverso" (que sí mejoraba el neto de forma
+consistente), este empeora el profit factor en los 4 casos, sube el
+drawdown fuerte (hasta +47%), y la plata neta queda plana o negativa.
+Confirma la intuición matemática: al activarse casi siempre (95-96% de
+las operaciones) sin distinguir ganadoras de perdedoras, y con un
+contrato extra de peor R:R individual, sólo agrega riesgo sin mejorar
+la selectividad.
+
+CONCLUSIÓN: descartado. El scale-in "adverso" (agregar al retroceder
+hacia el SL) sigue siendo el único de los dos que vale la pena seguir
+explorando. No se llevó al .pine.
