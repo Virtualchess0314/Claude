@@ -57,7 +57,8 @@ minGapAtr         = input.float(0.75, "Gap mínimo / ATR", step = 0.05, group = 
      tooltip = "0.75 confirmado en dos backtests independientes (Node.js en 1m, y el backtester Python de este repo en MNQ 5m jul-sep 2026): en los dos, subir este filtro mejora el profit factor de forma consistente train/test. Es el parámetro más robusto encontrado hasta ahora — ver estrategias/ifvg_sniper/backtest/.")
 minBodyRatio      = input.float(0.5, "Cuerpo mínimo de la vela impulso (0-1)", step = 0.05, group = g1)
 minRangeAtr       = input.float(0.6, "Rango mínimo de la vela impulso / ATR", step = 0.05, group = g1)
-cleanBreakBufferAtr = input.float(0.05, "Buffer de ruptura limpia / ATR", step = 0.01, group = g1)
+cleanBreakBufferAtr = input.float(0.10, "Buffer de ruptura limpia / ATR", step = 0.01, group = g1,
+     tooltip = "Subido de 0.05 a 0.10 tras barrer edad del IFVG / forma de vela / buffers dentro de la ventana NY ya validada: exigir una ruptura más decisiva (para confirmar el flip Y la invalidación) subió el PF de forma consistente en train (1.84→2.34) y test (2.52→2.70), sin tocar ningún otro parámetro. Ver estrategias/ifvg_sniper/backtest/runs/.")
 touchTolAtr       = input.float(0.05, "Tolerancia de toque / ATR", step = 0.01, group = g1)
 
 g2 = "Gestión de riesgo"

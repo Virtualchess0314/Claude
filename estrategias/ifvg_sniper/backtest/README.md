@@ -92,6 +92,30 @@ insuficiente para confiar), esto se validó re-corriendo train/test por
 separado, no mirando una sola tabla. Implementado como filtro opcional
 (`useEntryWindow`) en el `.pine`, activado por defecto.
 
+## Filtros de calidad de señal (edad del IFVG, forma de vela, buffers)
+
+Con la ventana NY ya fijada, se barrieron `max_ifvg_age`, `min_body_ratio`,
+`min_range_atr`, `clean_break_buffer_atr` y `touch_tol_atr` (405
+combinaciones, ver `runs/2026-09-05_mnq5m_calidad-senal_buffer0.10.csv`).
+
+- **`clean_break_buffer_atr` 0.05→0.10 fue la única mejora limpia**: exigir
+  una ruptura más decisiva (para confirmar tanto el flip como la
+  invalidación) subió el PF de forma consistente en train (1.84→2.34) y
+  test (2.52→2.70). Aplicado como nuevo default en el `.pine`.
+- `max_ifvg_age`, `min_range_atr` y `touch_tol_atr`: sin cambios respecto a
+  los valores por defecto — el barrido confirma que ya estaban bien
+  (ninguna alternativa los superó de forma consistente).
+- `min_body_ratio` 0.3 (más laxo) daba un PF de train todavía más alto
+  (2.72) pero sin mejorar el test respecto al 0.10 solo en buffer — se
+  descartó por agregar un segundo cambio sin beneficio claro adicional.
+
+**Filtro de tendencia (EMA) — probado y descartado:** `engine.py` soporta
+`trend_ema_len` (sólo tomar longs con cierre > EMA, shorts con cierre < EMA)
+pero empeoró los resultados con EMA 20/50/100/200 en todos los casos. Tiene
+sentido: esta estrategia es de reversión (opera el rechazo en una zona ya
+invertida), así que forzar alineación con una tendencia mayor filtra
+justamente las mejores señales de reversión. No se expone en el `.pine`.
+
 ## Limitaciones a tener en cuenta
 
 - Si en la misma vela se tocan SL y TP, el motor asume que el SL se ejecutó

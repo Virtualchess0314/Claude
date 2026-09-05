@@ -56,6 +56,11 @@ class Params:
     entry_start_hour: Optional[float] = None
     entry_end_hour: Optional[float] = None
 
+    # filtro opcional de tendencia: sólo tomar longs con close > EMA(trend_ema_len)
+    # y shorts con close < EMA(...). None = sin filtro (toma ambas direcciones
+    # siempre). Idea: operar el retest IFVG sólo a favor de la tendencia mayor.
+    trend_ema_len: Optional[int] = None
+
 
 @dataclass
 class Zone:
@@ -105,6 +110,11 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     ts = df.index
     n = len(df)
     atr = wilder_atr(df["high"], df["low"], df["close"], p.atr_len).values
+    trend_ema = (
+        df["close"].ewm(span=p.trend_ema_len, adjust=False).mean().values
+        if p.trend_ema_len
+        else None
+    )
 
     zones: list[Zone] = []
     next_id = 1
@@ -235,6 +245,10 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
             for z in zones:
                 if z.active and z.flipped and not z.used:
                     is_long = not z.supply
+                    if trend_ema is not None:
+                        aligned = (c[i] > trend_ema[i]) if is_long else (c[i] < trend_ema[i])
+                        if not aligned:
+                            continue
                     limit_price = z.broken_boundary + tol if is_long else z.broken_boundary - tol
                     risk_r = p.sl_atr_mult * a
                     risk_usd_per_contract = risk_r * p.point_value_usd

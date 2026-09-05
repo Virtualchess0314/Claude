@@ -48,28 +48,44 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--out", default="optimize_results.csv")
 
     # grid de parámetros (los que más impacto tuvieron según las notas del .pine)
-    ap.add_argument("--min-gap-atr", type=parse_float_list, default=[0.5, 0.75, 1.0])
-    ap.add_argument("--sl-atr-mult", type=parse_float_list, default=[0.5, 1.0, 1.5])
-    ap.add_argument("--rr-target", type=parse_float_list, default=[0.5, 1.0, 1.5, 2.0])
+    ap.add_argument("--min-gap-atr", type=parse_float_list, default=[0.75])
+    ap.add_argument("--sl-atr-mult", type=parse_float_list, default=[0.75])
+    ap.add_argument("--rr-target", type=parse_float_list, default=[1.5])
     ap.add_argument("--min-body-ratio", type=parse_float_list, default=[0.5])
     ap.add_argument("--min-range-atr", type=parse_float_list, default=[0.6])
+    ap.add_argument("--max-ifvg-age", type=lambda s: [int(x) for x in s.split(",")], default=[60])
+    ap.add_argument("--clean-break-buffer-atr", type=parse_float_list, default=[0.05])
+    ap.add_argument("--touch-tol-atr", type=parse_float_list, default=[0.05])
 
     # fijos (gestión de riesgo / cuenta — normalmente no se barren)
-    ap.add_argument("--max-risk-usd", type=float, default=150.0)
+    ap.add_argument("--max-risk-usd", type=float, default=300.0)
     ap.add_argument("--point-value-usd", type=float, default=2.0)
     ap.add_argument("--atr-len", type=int, default=14)
-    ap.add_argument("--max-ifvg-age", type=int, default=60)
+
+    # ventana horaria de entrada — validada en la ronda anterior (sesión NY),
+    # queda prendida por defecto para que los barridos siguientes ya partan
+    # de ahí. --no-entry-window la apaga para comparar contra 24hs.
+    ap.add_argument("--entry-start-hour", type=float, default=8.0)
+    ap.add_argument("--entry-end-hour", type=float, default=16.0)
+    ap.add_argument("--no-entry-window", action="store_true")
     return ap
 
 
 def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFrame:
     rows = []
     combos = list(
-        itertools.product(args.min_gap_atr, args.sl_atr_mult, args.rr_target, args.min_body_ratio, args.min_range_atr)
+        itertools.product(
+            args.min_gap_atr, args.sl_atr_mult, args.rr_target,
+            args.min_body_ratio, args.min_range_atr, args.max_ifvg_age,
+            args.clean_break_buffer_atr, args.touch_tol_atr,
+        )
     )
     print(f"Probando {len(combos)} combinaciones...", file=sys.stderr)
 
-    for min_gap_atr, sl_atr_mult, rr_target, min_body_ratio, min_range_atr in combos:
+    entry_start = None if args.no_entry_window else args.entry_start_hour
+    entry_end = None if args.no_entry_window else args.entry_end_hour
+
+    for min_gap_atr, sl_atr_mult, rr_target, min_body_ratio, min_range_atr, max_ifvg_age, clean_break_buffer_atr, touch_tol_atr in combos:
         p = Params(
             min_gap_atr=min_gap_atr,
             sl_atr_mult=sl_atr_mult,
@@ -79,7 +95,11 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
             max_risk_usd=args.max_risk_usd,
             point_value_usd=args.point_value_usd,
             atr_len=args.atr_len,
-            max_ifvg_age=args.max_ifvg_age,
+            max_ifvg_age=max_ifvg_age,
+            clean_break_buffer_atr=clean_break_buffer_atr,
+            touch_tol_atr=touch_tol_atr,
+            entry_start_hour=entry_start,
+            entry_end_hour=entry_end,
         )
         _, s_train = simulate(df_train, p)
         _, s_test = simulate(df_test, p)
@@ -91,6 +111,9 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
                 "rr_target": rr_target,
                 "min_body_ratio": min_body_ratio,
                 "min_range_atr": min_range_atr,
+                "max_ifvg_age": max_ifvg_age,
+                "clean_break_buffer_atr": clean_break_buffer_atr,
+                "touch_tol_atr": touch_tol_atr,
                 "train_trades": s_train["trades"],
                 "train_profit_factor": s_train["profit_factor"],
                 "train_win_rate": s_train["win_rate"],
