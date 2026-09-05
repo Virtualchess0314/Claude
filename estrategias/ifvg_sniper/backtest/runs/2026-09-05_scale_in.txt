@@ -1,0 +1,43 @@
+IFVG Sniper — scale-in (contrato extra al 25%/50% hacia el SL), MNQ 5m y 3m
+=====================================================================
+
+Idea del usuario: mantener la entrada original tal cual (sin tocar las
+operaciones "limpias"), pero agregar 1 contrato más si el precio llega
+a recorrer X% del camino hacia el SL, promediando el precio de entrada.
+SL y TP originales no cambian.
+
+Advertencia matemática de partida: TODA operación que termina en SL
+pasa, por definición, por el 25% (y el 50%) de camino hacia el SL antes
+de llegar al 100% -así que el contrato extra se agrega al 100% de las
+perdedoras eventuales, pero sólo a una fracción de las ganadoras
+(~55-56% de ellas llegan a ese punto). Esperable que el profit factor
+baje un poco. A pesar de eso, se midió en vez de descartarlo por
+intuición.
+
+Implementado en engine.py: scale_in_trigger_frac (fracción del riesgo
+original en la que se agrega) + scale_in_add_qty (contratos a agregar,
+default 1). Verificado sin regresión con trigger=None.
+
+RESULTADO: mejora real y CONSISTENTE en train y test, en ambos
+timeframes (trigger=0.25):
+
+  5m  train:  PF 2.08->2.03  neto $7.553->$8.601  (+13.9%)  dd -$1.623->-$2.003
+  5m  test:   PF 2.29->2.28  neto $4.330->$4.843  (+11.8%)  dd -$1.205->-$1.343
+  3m  train:  PF 1.30->1.32  neto $8.269->$9.647  (+16.7%)  dd -$2.015->-$2.298
+  3m  test:   PF 1.58->1.59  neto $6.707->$7.508  (+11.9%)  dd -$1.276->-$1.440
+
+El PF se mantiene prácticamente igual (como se esperaba, no mejora) pero
+la plata neta sube 12-17% en los cuatro casos, a cambio de 13-25% más
+de drawdown. Por qué funciona a pesar de la advertencia inicial: el
+contrato extra entra a un precio mejor que el original (más cerca del
+SL para un long = precio más bajo = mejor precio de compra), así que
+individualmente tiene mejor R:R que el contrato original -eso compensa
+de sobra el hecho de que se agrega a más perdedoras que ganadoras en
+términos relativos.
+
+Probado trigger=0.25 y 0.50 -resultados similares entre sí, 0.25 algo
+mejor en la mayoría de los casos.
+
+PENDIENTE: decidir si se lleva al .pine (requiere lógica de promediar
+precio de entrada y contratos, más compleja que un filtro simple).
+No implementado ahí todavía.

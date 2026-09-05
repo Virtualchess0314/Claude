@@ -97,6 +97,13 @@ class Params:
     # directo al TP sin bajar tanto. 0.0 = comportamiento original.
     entry_shift_frac: float = 0.0
 
+    # Scale-in: si el precio recorre scale_in_trigger_frac del camino hacia
+    # el SL (sobre el peor punto alcanzado), se agregan scale_in_add_qty
+    # contratos más al precio de ese momento, promediando el precio de
+    # entrada. El SL y el TP originales no cambian. None = desactivado.
+    scale_in_trigger_frac: Optional[float] = None
+    scale_in_add_qty: int = 1
+
 
 @dataclass
 class Zone:
@@ -165,6 +172,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     worst_since_entry = np.nan  # low más bajo (long) / high más alto (short) desde que abrió
     best_since_entry = np.nan   # high más alto (long) / low más bajo (short) desde que abrió
     moved_to_be = False
+    scaled_in = False
 
     trades = []
     orders_placed = 0
@@ -222,6 +230,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     worst_since_entry = l[i]
                     best_since_entry = h[i]
                     moved_to_be = False
+                    scaled_in = False
             else:
                 if h[i] >= pending_limit:
                     entry_price = max(pending_limit, o[i]) if o[i] >= pending_limit else pending_limit
@@ -231,6 +240,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     worst_since_entry = h[i]
                     best_since_entry = l[i]
                     moved_to_be = False
+                    scaled_in = False
 
             if state == "waiting" and (not pending_zone.active or not within):
                 state = "none"
@@ -256,6 +266,21 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     if better:
                         pending_sl = new_sl
                     moved_to_be = True
+
+            if p.scale_in_trigger_frac is not None and not scaled_in:
+                risk_dist_sofar = abs(entry_price - pending_sl)
+                progressed_adverse = abs(worst_since_entry - entry_price)
+                if risk_dist_sofar > 0 and progressed_adverse / risk_dist_sofar >= p.scale_in_trigger_frac:
+                    add_price = (
+                        entry_price - p.scale_in_trigger_frac * risk_dist_sofar
+                        if pending_is_long
+                        else entry_price + p.scale_in_trigger_frac * risk_dist_sofar
+                    )
+                    add_qty = p.scale_in_add_qty
+                    new_total_qty = pending_qty + add_qty
+                    entry_price = (entry_price * pending_qty + add_price * add_qty) / new_total_qty
+                    pending_qty = new_total_qty
+                    scaled_in = True
 
             exit_price = None
             reason = None
@@ -317,6 +342,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         "bars_held": i - entry_bar,
                         "mae_frac": mae_dist / risk_dist if risk_dist > 0 else np.nan,
                         "mfe_frac": mfe_dist / reward_dist if reward_dist > 0 else np.nan,
+                        "scaled_in": scaled_in,
                     }
                 )
                 state = "none"
