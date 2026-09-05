@@ -1,0 +1,261 @@
+//  ESTRATEGIA · IFVG Sniper (reconstrucción propia)  ·  Pine Script v6
+//
+//  Puerto directo de ifvg_sniper/engine.js (validado en backtest de Node.js sobre
+//  MNQ 1m-60m, ver trading-notes). Misma lógica exacta:
+//    1. Detecta un Fair Value Gap de 3 velas (con filtros de forma: gap mínimo,
+//       cuerpo/rango mínimo de la vela de impulso).
+//    2. Cuando el precio lo rompe y cierra del otro lado, el FVG se invierte
+//       (IFVG) — cambia de rol (demanda <-> oferta).
+//    3. Cuando el precio retestea esa zona YA invertida (toca el "borde roto"),
+//       se abre la operación — un solo trade por zona.
+//
+//  SL = entrada ± slAtrMult × ATR(atrLen) (FIJO, no depende del ancho de la zona).
+//  TP = entrada ± rrTarget × riesgo.
+//
+//  slAtrMult=1.0 (no 0.3, el óptimo puro de backtest) — deliberado: mantiene el
+//  tiempo de operación lejos del límite de "alta frecuencia" que penalizan
+//  firmas de fondeo como Lucid Trading. Con esto, 1m ~6 min/operación, 3m ~20
+//  min/operación en promedio — lejos de scalping.
+//
+//  RIESGO FIJO EN DÓLARES: en vez de arriesgar un monto distinto cada vez según
+//  la volatilidad, el tamaño de posición (cantidad de contratos) se ajusta para
+//  que cada operación arriesgue el mismo monto en USD (maxRiskUSD). Si ni con 1
+//  contrato entra dentro de ese riesgo, la señal se descarta.
+//
+//  Regla de cuenta fondeada: cierra TODO antes del fin de sesión (no overnight).
+//  Ajusta sessionCloseHour/Minute según las reglas de tu firma.
+//
+//  Dibuja en el gráfico ENTRY/SL/TP de cada señal para poder operar a mano.
+//
+//  Para automatizar con PickMyTrade: crea una alerta sobre esta estrategia con
+//  trigger "Order fills", pegá la Webhook URL de tu panel de PickMyTrade, y en
+//  el mensaje pegá el JSON que PickMyTrade generó para tu cuenta (con
+//  {{plot("SL")}} / {{plot("TP")}} / {{strategy.market_position}} / etc.).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+//@version=6
+strategy("IFVG Sniper [reconstrucción]", "IFVGSNIP",
+     overlay = true,
+     default_qty_type = strategy.fixed,
+     default_qty_value = 1,
+     pyramiding = 0,
+     calc_on_every_tick = false,
+     process_orders_on_close = true)
+
+// ── Inputs ──────────────────────────────────────────────────────────────────
+g1 = "IFVG · detección"
+hiddenFvgMemory   = input.int(120, "Memoria de FVG (barras)", group = g1)
+maxIfvgAge        = input.int(60, "Edad máxima del IFVG (barras)", group = g1)
+minGapAtr         = input.float(0.75, "Gap mínimo / ATR", step = 0.05, group = g1,
+     tooltip = "Subido de 0.25 (default del indicador) a 0.75 — validado en backtest: sube el PF de 2.16 a 2.54 en R:R 1:1, a costa de ~1/3 menos de operaciones.")
+minBodyRatio      = input.float(0.5, "Cuerpo mínimo de la vela impulso (0-1)", step = 0.05, group = g1)
+minRangeAtr       = input.float(0.6, "Rango mínimo de la vela impulso / ATR", step = 0.05, group = g1)
+cleanBreakBufferAtr = input.float(0.05, "Buffer de ruptura limpia / ATR", step = 0.01, group = g1)
+touchTolAtr       = input.float(0.05, "Tolerancia de toque / ATR", step = 0.01, group = g1)
+
+g2 = "Gestión de riesgo"
+atrLen            = input.int(14, "Longitud de ATR", group = g2)
+slAtrMult         = input.float(1.0, "SL en múltiplos de ATR", step = 0.1, group = g2,
+     tooltip = "Deliberadamente más alto que el óptimo de backtest (0.3) para evitar operaciones tan rápidas que puedan marcarse como HFT en cuentas de fondeo.")
+rrTarget          = input.float(1.0, "Take Profit en R (ej. 1 = 1:1)", step = 0.5, group = g2,
+     tooltip = "1:1 elegido tras comparar 0.5/1/2/3 en 1m: mejor balance de PF (2.54) y racha máxima de SL corta (3 seguidos, ~$450 de riesgo con maxRiskUSD=150).")
+maxRiskUSD        = input.float(150, "Riesgo máximo por operación (USD)", step = 10, group = g2,
+     tooltip = "El tamaño de posición se ajusta para que CADA operación arriesgue este mismo monto, sin importar qué tan ancho sea el SL calculado. Si ni 1 contrato entra en este riesgo, la señal se descarta.")
+pointValueUSD     = input.float(2.0, "Valor en USD por punto de índice", step = 0.5, group = g2,
+     tooltip = "MNQ (Micro Nasdaq) = 2. NQ (Nasdaq completo) = 20. Ajustá según el contrato real que operás en Lucid.")
+maxQty            = input.int(20, "Tope de contratos por seguridad", group = g2,
+     tooltip = "Límite duro para evitar un tamaño de posición absurdo si el ATR es anormalmente chico.")
+
+g3 = "Regla de cuenta fondeada — sin overnight"
+useSessionClose   = input.bool(true, "Forzar cierre antes de fin de sesión", group = g3)
+sessionTz         = input.string("America/New_York", "Zona horaria de sesión", group = g3)
+sessionCloseHour  = input.int(16, "Hora de cierre forzado (0-23)", minval = 0, maxval = 23, group = g3)
+sessionCloseMinute = input.int(45, "Minuto de cierre forzado", minval = 0, maxval = 59, group = g3,
+     tooltip = "Se cierra TODO 15 min antes del corte real (ej. 16:45 si el corte es 17:00) para dejar margen de ejecución.")
+
+g4 = "Visualización"
+showLevels        = input.bool(true, "Dibujar ENTRY/SL/TP en el gráfico", group = g4)
+maxLevelsShown     = input.int(8, "Máx. operaciones dibujadas a la vez", group = g4)
+
+// ── Zona (Fair Value Gap / Inverse FVG) ──────────────────────────────────────
+type Zone
+    int id
+    float top
+    float bot
+    bool supply
+    bool active
+    bool flipped
+    int flipBar
+    float brokenBoundary
+    bool used
+
+var array<Zone> zones = array.new<Zone>()
+var int nextZoneId = 1
+
+atr = ta.atr(atrLen)
+
+// ── 1. Detectar nuevos FVG (gap de 3 velas, vela de impulso = 1 atrás) ──────
+midRange  = high[1] - low[1]
+bodyRatio = midRange > 0 ? math.abs(close[1] - open[1]) / midRange : 0.0
+rangeAtr  = atr > 0 ? midRange / atr : 0.0
+passesShape = bodyRatio >= minBodyRatio and rangeAtr >= minRangeAtr
+
+if passesShape and not na(atr)
+    gapUp = low - high[2]
+    if gapUp > 0 and atr > 0 and gapUp / atr >= minGapAtr
+        z = Zone.new(nextZoneId, low, high[2], false, true, false, na, na, false)
+        array.push(zones, z)
+        nextZoneId += 1
+    gapDn = low[2] - high
+    if gapDn > 0 and atr > 0 and gapDn / atr >= minGapAtr
+        z = Zone.new(nextZoneId, low[2], high, true, true, false, na, na, false)
+        array.push(zones, z)
+        nextZoneId += 1
+
+// ── 2. Actualizar flip/expiración de zonas activas ──────────────────────────
+buf = atr * cleanBreakBufferAtr
+if array.size(zones) > 0
+    for i = 0 to array.size(zones) - 1
+        z = array.get(zones, i)
+        if z.active
+            if not z.flipped
+                filled = z.supply ? close >= z.top + buf : close <= z.bot - buf
+                if filled
+                    z.supply := not z.supply
+                    z.flipped := true
+                    z.flipBar := bar_index
+                    z.brokenBoundary := z.supply ? z.bot : z.top
+            else
+                expired = bar_index - z.flipBar > maxIfvgAge
+                rebroken = z.supply ? close >= z.top + buf : close <= z.bot - buf
+                if expired or rebroken
+                    z.active := false
+
+// limpiar memoria: no dejar crecer el array sin límite (limite por "Memoria de FVG")
+if array.size(zones) > hiddenFvgMemory * 2
+    array.shift(zones)
+
+// ── 3. Regla de sesión — ¿estamos dentro de horario permitido? ──────────────
+sessHour   = hour(time, sessionTz)
+sessMinute = minute(time, sessionTz)
+minutesNow = sessHour * 60 + sessMinute
+minutesCutoff = sessionCloseHour * 60 + sessionCloseMinute
+withinSession = not useSessionClose or minutesNow < minutesCutoff
+
+// ── 4. Buscar señal de entrada (retest de la línea IFVG, un trade por zona) ─
+var float pendingSl = na
+var float pendingTp = na
+var float pendingEntry = na
+var int pendingQty = 0
+longSignal = false
+shortSignal = false
+
+if strategy.position_size == 0 and withinSession and array.size(zones) > 0
+    tol = atr * touchTolAtr
+    for i = 0 to array.size(zones) - 1
+        z = array.get(zones, i)
+        if z.active and z.flipped and not z.used
+            line = z.brokenBoundary
+            isLong = not z.supply and low <= line + tol and high >= line - tol
+            isShort = z.supply and high >= line - tol and low <= line + tol
+            if isLong or isShort
+                riskR = slAtrMult * atr
+                riskUSDPerContract = riskR * pointValueUSD
+                qty = riskUSDPerContract > 0 ? int(math.min(maxQty, math.floor(maxRiskUSD / riskUSDPerContract))) : 0
+                if qty >= 1
+                    z.used := true
+                    pendingEntry := line
+                    pendingQty := qty
+                    if isLong
+                        longSignal := true
+                        pendingSl := line - riskR
+                        pendingTp := line + rrTarget * riskR
+                    else
+                        shortSignal := true
+                        pendingSl := line + riskR
+                        pendingTp := line - rrTarget * riskR
+                    break
+                // si ni 1 contrato entra en el riesgo máximo, se descarta esta señal
+                // (no se marca z.used, así que si la zona sigue viva puede reintentarse
+                // en un retest posterior con otro ATR)
+
+// ── 5. Ejecutar ──────────────────────────────────────────────────────────────
+// El mensaje de la alerta NO se define acá — se configura una sola vez en el
+// diálogo de alerta de TradingView (trigger "Order fills"), pegando el JSON
+// que genera PickMyTrade.
+if longSignal
+    strategy.entry("Long", strategy.long, qty = pendingQty)
+    strategy.exit("Salida Long", "Long", stop = pendingSl, limit = pendingTp)
+
+if shortSignal
+    strategy.entry("Short", strategy.short, qty = pendingQty)
+    strategy.exit("Salida Short", "Short", stop = pendingSl, limit = pendingTp)
+
+// ── 6. Cierre forzado de fin de sesión (regla "no overnight") ───────────────
+if useSessionClose and not withinSession and strategy.position_size != 0
+    strategy.close_all(comment = "Cierre fin de sesión")
+
+// ── 7. Visualización — cajas ENTRY→TP (verde) / ENTRY→SL (roja), como la
+// herramienta nativa "Long/Short Position" de TradingView, para operar a mano.
+// La caja de la operación abierta se estira barra a barra; en cuanto el precio
+// toca el SL o el TP (strategy.position_size vuelve a 0) deja de estirarse y
+// queda congelada ahí — así se ve exactamente dónde cerró.
+var array<box> profitBoxes  = array.new<box>()
+var array<box> riskBoxes    = array.new<box>()
+var array<line> entryLines  = array.new<line>()
+var array<label> tradeLabels = array.new<label>()
+var bool lastTradeOpen = false
+
+if showLevels and lastTradeOpen and array.size(profitBoxes) > 0
+    box.set_right(array.get(profitBoxes, array.size(profitBoxes) - 1), bar_index)
+    box.set_right(array.get(riskBoxes, array.size(riskBoxes) - 1), bar_index)
+    line.set_x2(array.get(entryLines, array.size(entryLines) - 1), bar_index)
+    if strategy.position_size == 0
+        lastTradeOpen := false
+
+if showLevels and (longSignal or shortSignal)
+    isLong = longSignal
+    colProfitBg   = color.new(color.green, 85)
+    colRiskBg     = color.new(color.red, 85)
+    colProfitLine = color.new(color.green, 0)
+    colRiskLine   = color.new(color.red, 0)
+
+    topProfit = isLong ? pendingTp : pendingEntry
+    botProfit = isLong ? pendingEntry : pendingTp
+    topRisk   = isLong ? pendingEntry : pendingSl
+    botRisk   = isLong ? pendingSl : pendingEntry
+
+    bProfit = box.new(bar_index, topProfit, bar_index, botProfit, border_color = colProfitLine, bgcolor = colProfitBg, border_width = 1)
+    bRisk   = box.new(bar_index, topRisk, bar_index, botRisk, border_color = colRiskLine, bgcolor = colRiskBg, border_width = 1)
+    lEntry  = line.new(bar_index, pendingEntry, bar_index, pendingEntry, color = color.new(color.blue, 0), width = 2, style = line.style_solid)
+
+    dirTxt = isLong ? "LONG" : "SHORT"
+    txt = dirTxt + " x" + str.tostring(pendingQty) + "  (R:R 1:" + str.tostring(rrTarget) + ")" +
+         "\nEntry " + str.tostring(pendingEntry, format.mintick) +
+         "\nTP " + str.tostring(pendingTp, format.mintick) +
+         "\nSL " + str.tostring(pendingSl, format.mintick)
+    lbl = label.new(bar_index, pendingEntry, txt,
+         style = isLong ? label.style_label_up : label.style_label_down,
+         color = isLong ? colProfitLine : colRiskLine,
+         textcolor = color.white, size = size.small)
+
+    array.push(profitBoxes, bProfit)
+    array.push(riskBoxes, bRisk)
+    array.push(entryLines, lEntry)
+    array.push(tradeLabels, lbl)
+    lastTradeOpen := true
+
+    if array.size(profitBoxes) > maxLevelsShown
+        box.delete(array.shift(profitBoxes))
+        box.delete(array.shift(riskBoxes))
+        line.delete(array.shift(entryLines))
+        label.delete(array.shift(tradeLabels))
+
+// ── Otros indicadores visuales ────────────────────────────────────────────────
+plot(atr, "ATR (referencia)", color = color.gray, display = display.data_window)
+bgcolor(withinSession ? na : color.new(color.red, 90), title = "Fuera de sesión permitida")
+
+// ── Plots ocultos: exponen el SL/TP calculado para que PickMyTrade lo lea vía
+// el placeholder {{plot("SL")}} / {{plot("TP")}} en el mensaje de la alerta ──
+plot(pendingSl, "SL", display = display.none)
+plot(pendingTp, "TP", display = display.none)
