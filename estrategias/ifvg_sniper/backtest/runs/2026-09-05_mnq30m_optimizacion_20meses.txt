@@ -1,0 +1,30 @@
+IFVG Sniper — MNQ 30m (export nativo, 20 meses) — revierte veredicto anterior
+=====================================================================
+
+19.796 velas, 01 ene 2025 - 04 sep 2026 (export nativo, no derivado).
+Train 70% (13.857) / test 30% (5.939).
+
+Al igual que con 15m, la primera prueba de 30m (2 meses derivados de
+5m) no mostró edge consistente. Con 20 meses de historial nativo sí
+aparece uno, y es el más sólido de todos los timeframes probados hasta
+ahora en términos de plata neta total.
+
+CONFIG FINAL: min_gap_atr=0.75, sl_atr_mult=1.50 (el SL más ancho de
+todos los timeframes -tiene sentido, ATR de 30m es más grande),
+rr_target=1.0, clean_break_buffer_atr=0.05 (default), SIN ventana
+horaria (la NY empeora acá también). avg_qty=1.6 (bajo, por el SL
+ancho -nunca cerca del límite de 40).
+
+Resultado sobre el dataset completo: 345 trades, PF 1.53 (1.39 train /
+2.02 test, consistente), winrate 58%, expectancy 0.27R, neto $15.047
+(el más alto de todos los timeframes), drawdown -$2.418, racha máxima
+de SL: 5 (-$705), duración promedio ~1h 45min.
+
+CONCLUSIÓN: 30m es viable, y con la muestra más grande (345 trades en
+20 meses) es en el que más se puede confiar de todos los timeframes
+probados hasta ahora. Confirma el patrón de 15m: el problema de las
+pruebas anteriores era siempre la falta de historial, no el timeframe.
+
+PENDIENTE: reconstruir 5m y 10m con historial igual de largo (desde
+~2024) para ver si sus configs actuales cambian también -dado este
+patrón, es probable.
