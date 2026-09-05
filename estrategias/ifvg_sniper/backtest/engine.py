@@ -137,6 +137,8 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     pending_sl = np.nan
     pending_tp = np.nan
     pending_qty = 0
+    worst_since_entry = np.nan  # low más bajo (long) / high más alto (short) desde que abrió
+    best_since_entry = np.nan   # high más alto (long) / low más bajo (short) desde que abrió
 
     trades = []
     orders_placed = 0
@@ -191,12 +193,16 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     entry_bar = i
                     state = "open"
                     orders_filled += 1
+                    worst_since_entry = l[i]
+                    best_since_entry = h[i]
             else:
                 if h[i] >= pending_limit:
                     entry_price = max(pending_limit, o[i]) if o[i] >= pending_limit else pending_limit
                     entry_bar = i
                     state = "open"
                     orders_filled += 1
+                    worst_since_entry = h[i]
+                    best_since_entry = l[i]
 
             if state == "waiting" and (not pending_zone.active or not within):
                 state = "none"
@@ -204,6 +210,13 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
 
         # ── 4. Posición abierta: ¿tocó SL/TP o toca cierre de sesión? ───────
         if state == "open":
+            if pending_is_long:
+                worst_since_entry = min(worst_since_entry, l[i])
+                best_since_entry = max(best_since_entry, h[i])
+            else:
+                worst_since_entry = max(worst_since_entry, h[i])
+                best_since_entry = min(best_since_entry, l[i])
+
             exit_price = None
             reason = None
             if pending_is_long:
@@ -232,6 +245,15 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 commission_usd = p.commission_round_turn_usd * pending_qty
                 pnl_usd = gross_pnl_usd - commission_usd
                 risk_usd = p.sl_atr_mult * atr[entry_bar] * pending_qty * p.point_value_usd
+
+                # MAE/MFE: qué tan cerca llegó el precio del SL o del TP
+                # contrarios ANTES de cerrar, sin importar cómo cerró al final
+                # (aproximado con máximos/mínimos de vela, no con datos de tick).
+                risk_dist = abs(entry_price - pending_sl)
+                reward_dist = abs(pending_tp - entry_price)
+                mae_dist = abs(entry_price - worst_since_entry)
+                mfe_dist = abs(best_since_entry - entry_price)
+
                 trades.append(
                     {
                         "entry_time": ts[entry_bar],
@@ -246,6 +268,8 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         "pnl_usd": pnl_usd,
                         "r_multiple": pnl_usd / risk_usd if risk_usd > 0 else np.nan,
                         "bars_held": i - entry_bar,
+                        "mae_frac": mae_dist / risk_dist if risk_dist > 0 else np.nan,
+                        "mfe_frac": mfe_dist / reward_dist if reward_dist > 0 else np.nan,
                     }
                 )
                 state = "none"

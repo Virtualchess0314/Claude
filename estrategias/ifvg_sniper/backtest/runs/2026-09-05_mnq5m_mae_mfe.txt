@@ -1,0 +1,43 @@
+IFVG Sniper — análisis de MAE/MFE, MNQ 5m (config vigente en el .pine)
+=====================================================================
+
+Config: minGapAtr=0.75, slAtrMult=0.75, rrTarget=1.5, buffer=0.10,
+ventana NY 08-16 ET, maxRiskUSD=300, comisión real $3.50 RT + 1 tick
+slippage. 95 operaciones (54 TP, 41 SL) sobre 2 meses de datos.
+
+GANADORAS (54, cerraron en TP) — ¿cuánto se acercaron al SL antes de
+ganar? (Maximum Adverse Excursion, como fracción de la distancia al SL)
+  0-25%     24  (44.4%)
+  25-50%    14  (25.9%)
+  50-75%     9  (16.7%)
+  75-100%    7  (13.0%)
+  >=25% del camino: 30 (55.6%)  |  >=50%: 16 (29.6%)
+
+PERDEDORAS (41, cerraron en SL) — ¿cuánto se acercaron al TP antes de
+perder? (Maximum Favorable Excursion, como fracción de la distancia al TP)
+  0-25%      5  (12.2%)
+  25-50%    10  (24.4%)
+  50-75%    10  (24.4%)
+  75-100%    6  (14.6%)
+  >=100%    10  (24.4%)  <- OJO, ver aclaración abajo
+  >=25% del camino: 36 (87.8%)  |  >=50%: 26 (63.4%)
+
+ACLARACIÓN IMPORTANTE sobre el bucket >=100%: de esas 10 operaciones,
+9 tienen bars_held=0 (cerraron en la MISMA vela de 5m en que entraron)
+-es decir, una sola vela extremadamente volátil cubrió el SL y el TP a
+la vez, y ahí aplica la regla conservadora del motor ("si se tocan
+ambos en la misma vela, se asume que el SL se ejecutó primero"). No es
+necesariamente una reversión real de varias velas. Sólo 2 de 41
+perdedoras son reversiones multi-vela genuinas (se acercaron al TP
+durante 1-2 velas y luego cayeron al SL).
+
+CONCLUSIÓN ACCIONABLE: sin contar el artefacto de vela única, un 63-88%
+de las operaciones perdedoras SÍ llegaron a acercarse bastante al TP
+antes de perder. Esto sugiere que un mecanismo de toma de ganancia
+parcial o mover el SL a breakeven a mitad de camino (como ya hace UPF
+Artillery con sus 3 tramos) podría rescatar parte de esas pérdidas.
+Pendiente: probarlo y medir el impacto real en PF/expectancy.
+
+Implementación: engine.py ahora calcula mae_frac/mfe_frac por
+operación (tracking de worst_since_entry/best_since_entry mientras la
+posición está abierta). Script: mae_mfe_analysis.py.
