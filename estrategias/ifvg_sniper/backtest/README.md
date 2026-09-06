@@ -373,6 +373,18 @@ equivale a **NY 03:30-16:00**).
   (1.35→1.52); train baja un poco (1.46→1.32) pero sigue siendo la
   config más consistente de las dos. Casi sin costo, recomendable si se
   usa 15m en paralelo con 5m para no perderse señales fuera de horario.
+- **1m y 3m con ventana NY 08-16 + R:R más bajo (1:0.75) — probado y
+  descartado:** en 1m, agregar la ventana NY rompe el edge por completo
+  (PF de test cae a 0.87-0.91, por debajo de 1, en ambos R:R) — confirma
+  con más detalle lo que ya decía la sección de abajo sobre la ventana NY
+  en otros timeframes. En 3m se mantiene decente con R:R vigente (1.0,
+  PF test 1.53) pero combinarlo con 1:0.75 lo empeora (PF test 1.49→1.28
+  sin ventana → con ventana). Además, ninguno de los dos baja lo
+  suficiente en frecuencia para el objetivo de 1-2 operaciones/día: con
+  la ventana quedan en 5.5/día (1m) y 7.3/día (3m), todavía muy por
+  encima — la ventana horaria atenúa el sobre-trading de estos
+  timeframes pero no lo resuelve. Para ese objetivo, 5m sigue siendo la
+  opción que encaja sin sacrificar edge (ver sección de arriba).
 
 ## Limitaciones a tener en cuenta
 
