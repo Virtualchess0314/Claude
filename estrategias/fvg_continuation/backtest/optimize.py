@@ -56,6 +56,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--piv-left", type=parse_int_list, default=[3])
     ap.add_argument("--piv-right", type=parse_int_list, default=[2])
     ap.add_argument("--min-rr", type=parse_float_list, default=[1.0, 1.5, 2.0])
+    ap.add_argument("--sl-mode", type=lambda s: s.split(","), default=["zone"],
+                     help="zone (borde de la zona) y/o impulse_candle (extremo de la vela de impulso), separados por coma")
 
     ap.add_argument("--atr-len", type=int, default=14)
     ap.add_argument("--max-risk-usd", type=float, default=300.0)
@@ -76,18 +78,18 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
         itertools.product(
             args.min_gap_atr, args.min_body_ratio, args.min_range_atr,
             args.invalidate_buffer_atr, args.touch_tol_atr, args.sl_buffer_atr,
-            args.max_fvg_age, args.piv_left, args.piv_right, args.min_rr,
+            args.max_fvg_age, args.piv_left, args.piv_right, args.min_rr, args.sl_mode,
         )
     )
     print(f"Probando {len(combos)} combinaciones...", file=sys.stderr)
 
     for (min_gap_atr, min_body_ratio, min_range_atr, invalidate_buffer_atr,
-         touch_tol_atr, sl_buffer_atr, max_fvg_age, piv_left, piv_right, min_rr) in combos:
+         touch_tol_atr, sl_buffer_atr, max_fvg_age, piv_left, piv_right, min_rr, sl_mode) in combos:
         p = Params(
             min_gap_atr=min_gap_atr, min_body_ratio=min_body_ratio, min_range_atr=min_range_atr,
             invalidate_buffer_atr=invalidate_buffer_atr, touch_tol_atr=touch_tol_atr,
             sl_buffer_atr=sl_buffer_atr, max_fvg_age=max_fvg_age,
-            piv_left=piv_left, piv_right=piv_right, min_rr=min_rr,
+            piv_left=piv_left, piv_right=piv_right, min_rr=min_rr, sl_mode=sl_mode,
             atr_len=args.atr_len, max_risk_usd=args.max_risk_usd, point_value_usd=args.point_value_usd,
             max_qty=args.max_qty, commission_round_turn_usd=args.commission_round_turn_usd,
             slippage_ticks=args.slippage_ticks, tick_size=args.tick_size,
@@ -97,6 +99,7 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
         _, s_test = simulate(df_test, p)
         rows.append(
             {
+                "sl_mode": sl_mode,
                 "min_gap_atr": min_gap_atr, "min_body_ratio": min_body_ratio, "min_range_atr": min_range_atr,
                 "invalidate_buffer_atr": invalidate_buffer_atr, "touch_tol_atr": touch_tol_atr,
                 "sl_buffer_atr": sl_buffer_atr, "max_fvg_age": max_fvg_age,

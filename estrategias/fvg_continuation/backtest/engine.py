@@ -87,6 +87,15 @@ class Params:
 
     tie_break: str = "sl_first"  # "sl_first" (conservador) | "tp_first" (cota optimista)
 
+    # Dónde referenciar el SL:
+    #   "zone"            = borde de la zona del FVG (comportamiento original)
+    #   "impulse_candle"  = extremo de la vela de impulso completa (i-1), que
+    #                       suele quedar más lejos que el borde de la zona —
+    #                       pensado para no saltar por una mecha de barrido de
+    #                       liquidez que sólo toca ligeramente la zona antes de
+    #                       continuar a favor del impulso original.
+    sl_mode: str = "zone"
+
 
 @dataclass
 class Zone:
@@ -95,6 +104,8 @@ class Zone:
     bot: float
     is_demand: bool  # True = zona de demanda (busca long) | False = zona de oferta (busca short)
     created_bar: int
+    impulse_low: float = np.nan   # low/high de la vela de impulso (i-1) que creó el gap
+    impulse_high: float = np.nan
     active: bool = True
     used: bool = False
 
@@ -217,11 +228,13 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
             if passes_shape:
                 gap_up = l[i] - h[i - 2]
                 if gap_up > 0 and a > 0 and gap_up / a >= p.min_gap_atr:
-                    zones.append(Zone(next_id, top=l[i], bot=h[i - 2], is_demand=True, created_bar=i))
+                    zones.append(Zone(next_id, top=l[i], bot=h[i - 2], is_demand=True, created_bar=i,
+                                       impulse_low=l[i - 1], impulse_high=h[i - 1]))
                     next_id += 1
                 gap_dn = l[i - 2] - h[i]
                 if gap_dn > 0 and a > 0 and gap_dn / a >= p.min_gap_atr:
-                    zones.append(Zone(next_id, top=l[i - 2], bot=h[i], is_demand=False, created_bar=i))
+                    zones.append(Zone(next_id, top=l[i - 2], bot=h[i], is_demand=False, created_bar=i,
+                                       impulse_low=l[i - 1], impulse_high=h[i - 1]))
                     next_id += 1
 
         # ── 3. Invalidar/expirar zonas activas no usadas ────────────────────
@@ -321,7 +334,11 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     continue
                 is_long = z.is_demand
                 entry_level = z.top - tol if is_long else z.bot + tol
-                sl_level = z.bot - sl_buf if is_long else z.top + sl_buf
+                if p.sl_mode == "impulse_candle":
+                    sl_ref = z.impulse_low if is_long else z.impulse_high
+                else:
+                    sl_ref = z.bot if is_long else z.top
+                sl_level = sl_ref - sl_buf if is_long else sl_ref + sl_buf
                 risk_dist = abs(entry_level - sl_level)
                 if risk_dist <= 0:
                     continue
