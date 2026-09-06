@@ -127,6 +127,14 @@ parecidos (no sobreajustado) y `test_expectancy_r` — con R:R fijo, el
 combinación no supera ese umbral con margen, no hay edge ahí por más que
 el profit factor de una sola corrida parezca bueno.
 
+**Resultado con MNQ 1m/5m/15m (jul-sep 2026):** ver
+`../RESUMEN.md` para el análisis completo. En corto: **5m** es el más
+convincente (length corto 8-26, SL 1.0-1.5×ATR, R:R 1:1-1:1.5, muestras
+grandes de 200-700 operaciones), **1m** muestra algo similar pero con
+muy poca muestra (2 semanas), y **15m** no mostró ningún edge — todas las
+combinaciones quedaron en el punto de equilibrio. Corridas completas en
+`runs/2026-09-06_mnq*_atr-rr_sweep.csv`.
+
 ## Limitaciones a tener en cuenta
 
 - El fill se simula a **cierre de la vela siguiente a la señal**
