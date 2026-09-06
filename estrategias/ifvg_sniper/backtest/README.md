@@ -234,6 +234,47 @@ Trade-offs a decidir según prioridad, no hay un lado objetivamente mejor:
   cuenta tolera un drawdown de ~$2.800 (peor caso visto, 1:1.5 a $500)
   dentro de sus reglas de pérdida máxima antes de subir el riesgo.
 
+## R:R más bajo (1:0.75 y 1:0.5) para cuentas de fondeo
+
+Hipótesis a probar: un R:R más chico (TP más cerca que el SL) sube el
+winrate y acorta las rachas de operaciones perdedoras seguidas — algo que
+puede convenir en una cuenta fondeada con límite de pérdida diaria/máxima,
+aunque baje la plata neta. Se probó `rr_target=0.75` y `0.5` en los 4
+timeframes con datos reales (manteniendo el resto de la config vigente de
+cada uno), split train/test 70/30, comisión+slippage reales:
+
+| Timeframe | R:R | Winrate train/test | PF train/test | Neto test | Drawdown test | Racha SL train/test |
+|---|---|---|---|---|---|---|
+| 1m | 1:1 (vigente) | 69%/77% | 1.50/**2.30** | $2.174 | -$694 | 3/2 |
+| 1m | 1:0.75 | 77%/82% | 1.54/2.12 | $1.472 | -$651 | 2/2 |
+| 1m | 1:0.5 | 85%/86% | 1.46/1.61 | $596 | -$651 | 2/2 |
+| 3m | 1:1 (vigente) | 61%/66% | 1.30/**1.58** | $6.707 | -$1.276 | 6/3 |
+| 3m | 1:0.75 | 69%/72% | 1.35/1.49 | $4.718 | -$903 | 5/3 |
+| 3m | 1:0.5 | 79%/77% | 1.48/1.22 | $1.741 | -$1.334 | 4/2 |
+| 5m | 1:1.5 (vigente) | 60%/61% | 2.08/**2.29** | $4.330 | -$1.205 | 6/4 |
+| 5m | 1:0.75 | 73%/72% | 1.91/1.60 | $1.644 | -$1.205 | 2/4 |
+| 5m | 1:0.5 | 81%/78% | 2.07/1.34 | $745 | -$925 | 2/3 |
+| 15m | 1:1.5 (vigente) | 52%/50% | 1.46/1.35 | $2.070 | -$1.943 | 7/5 |
+| 15m | **1:0.75** | **69%/73%** | **1.55/1.82** | **$2.615** | **-$901** | **6/3** |
+| 15m | 1:0.5 | 75%/75% | 1.48/1.34 | $979 | -$1.496 | 3/3 |
+
+**En 1m, 3m y 5m el patrón confirma la hipótesis sólo a medias:** sube el
+winrate y achica algo la racha de SL, pero el profit factor y sobre todo
+la plata neta de test caen bastante — en 3m y 5m, a 1:0.5 el PF de test
+queda apenas por encima de 1 (1.22 y 1.34) con muy poco neto. Es un
+trade-off real, no una mejora gratis: 1:0.75 es un punto medio razonable
+si lo que más importa es suavizar la curva, pero 1:0.5 cede demasiado
+edge para lo poco que reduce el riesgo de racha (que ya era bajo en 1m/5m
+con el R:R vigente).
+
+**En 15m, 1:0.75 es una mejora real, no un trade-off** — mejor PF en
+train Y test (1.35→1.82 en test), más neto en test, drawdown mucho menor
+(-$1.943→-$901) y racha de SL más corta. Con 90-93 operaciones en train y
+44 en test, tiene mejor base de muestra que 1m para confiar en el
+resultado. Candidato serio para reemplazar `rr_target=1.5` en 15m si se
+llega a operar ese timeframe — pendiente de confirmar con más historial y
+en el Strategy Tester de TradingView antes de llevarlo al `.pine`.
+
 ## Limitaciones a tener en cuenta
 
 - Si en la misma vela se tocan SL y TP, el motor asume que el SL se ejecutó
