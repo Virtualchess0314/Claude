@@ -1,10 +1,10 @@
 """
 Carga de datos históricos OHLC para el backtester de Hull Suite.
 
-Igual que el loader de ifvg_sniper/upf_artillery: pensado para el CSV que
-exporta TradingView desde el gráfico ("Export chart data"). Ese export trae
-columnas tipo: time,open,high,low,close[,Volume,...]. También acepta
-variantes con Date/Datetime y mayúsculas/minúsculas mezcladas.
+Pensado para el CSV que exporta TradingView desde el gráfico ("Export
+chart data"). Ese export trae columnas tipo: time,open,high,low,close
+[,Volume,...]. También acepta variantes con Date/Datetime y mayúsculas/
+minúsculas mezcladas.
 """
 
 from __future__ import annotations

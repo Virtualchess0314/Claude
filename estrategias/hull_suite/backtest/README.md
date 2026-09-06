@@ -7,10 +7,9 @@ que probando manualmente en TradingView.
 ## Qué estrategia es esta
 
 Hull Suite es un script público (indicador de InSilico, convertido a
-`strategy` por DashTrader) que ya estaba armado antes de subirlo a este
-repo — a diferencia de `ifvg_sniper` y `upf_artillery`, acá no hay un
-motor propio pensado desde cero, es la réplica de un sistema de terceros.
-Su lógica es muy simple:
+`strategy` por DashTrader). Es una estrategia independiente, sin relación
+con ninguna otra de este repo — este backtester replica únicamente su
+propia lógica, que es muy simple:
 
 - Calcula una Hull MA de `length` períodos sobre el cierre.
 - Si el valor actual es mayor que el de 2 velas atrás → long. Si es menor →
