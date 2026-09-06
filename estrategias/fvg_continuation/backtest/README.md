@@ -18,7 +18,7 @@ entrada invertida — ver docstring de `engine.py` para el detalle completo.
   dirección del trade), no un R:R fijo — el R:R sale de dónde está ese
   swing, y se filtra con `min_rr` como mínimo aceptable.
 
-## Estado: sin edge validado todavía (barrido inicial negativo)
+## Veredicto: DESCARTADA (dos enfoques de SL probados, ninguno con edge)
 
 Se corrió un barrido de parámetros sobre MNQ 1m/3m/5m/15m (mismos datos
 que `ifvg_sniper`, ver `runs/2026-09-06_mnq*_barrido_inicial.csv`) con
@@ -39,11 +39,32 @@ mecha (o rellene casi toda la zona) antes de continuar en la dirección
 original, así que un SL tan pegado se lleva puesto ese barrido de
 liquidez la mayoría de las veces.
 
-**Pendiente de decisión:** probar una variante con el SL más alejado
-(ej. más allá del extremo de la vela de impulso completa, no sólo
-"afuera de la zona") antes de dar esto por descartado del todo. Por eso
-no se armó todavía el `.pine` — no tiene sentido pulir la implementación
-en Pine Script de algo que no mostró edge en el motor de Python.
+**Segunda vuelta — SL más alejado (`sl_mode=impulse_candle`), también
+descartado:** se agregó una variante de SL usando el extremo de la vela
+de impulso completa (i-1) en vez del borde de la zona, con la misma
+lógica de barrido en las 4 temporalidades (ver
+`runs/2026-09-06_mnq*_sl_mode_comparativo.csv`):
+
+| Timeframe | `impulse_candle` vs `zone` |
+|---|---|
+| 1m | Sin mejora — mejor caso train PF 0.47-0.50 (pésimo) con test 0.83-0.90; hueco train/test enorme, ruido |
+| 3m | Empata, sin diferencia real (test PF ~0.86 en ambos) |
+| 5m | **Peor** — queda uniformemente mal (train 0.81-0.84, test 0.67-0.72), mientras `zone` al menos tenía buen train |
+| 15m | `zone` sigue siendo mejor en todos los casos — `impulse_candle` ni entra al top |
+
+La distancia del SL no era el problema: alejarlo no mejora nada y en 5m
+empeora. Esto apunta a que el concepto de fondo (TP en el "próximo swing
+sin mitigar" para una entrada de continuación) simplemente no encuentra
+objetivos alcanzables con la frecuencia necesaria en este dataset,
+independientemente de dónde se ponga el stop.
+
+**Con dos enfoques de SL distintos sin edge en ninguna de las 4
+temporalidades, se descarta esta estrategia en su forma actual.** No se
+armó el `.pine` — no tiene sentido pulirlo para algo sin edge validado en
+Python. Si en el futuro se retoma, valdría la pena revisar el TP (no el
+SL): por ejemplo, un R:R fijo por ATR en vez de buscar el swing más
+cercano, o exigir un swing target más lejano/significativo en vez del
+más cercano sin mitigar.
 
 ## Uso
 
