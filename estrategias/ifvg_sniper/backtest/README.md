@@ -234,6 +234,36 @@ Trade-offs a decidir según prioridad, no hay un lado objetivamente mejor:
   cuenta tolera un drawdown de ~$2.800 (peor caso visto, 1:1.5 a $500)
   dentro de sus reglas de pérdida máxima antes de subir el riesgo.
 
+## maxRiskUSD 300 vs 600, en los 4 timeframes
+
+Mismo test de arriba (R:R vigente / 1:0.75 / 1:0.5) repetido con
+`max_risk_usd=600` en vez de 300, para ver si escala limpio o empieza a
+toparse con `maxQty=40`:
+
+| Timeframe | R:R | PF test (300→600) | Neto test (300→600) | Drawdown test (300→600) | Qty prom. | Trades topados a qty=40 (train/test) |
+|---|---|---|---|---|---|---|
+| 1m | 1:1 | 2.30→2.16 | $2.174→$3.925 | -$694→-$1.413 | 30.4 | **2/39 · 7/22 (32% del test)** |
+| 3m | 1:1 | 1.58→1.59 | $6.707→$14.070 | -$1.276→-$2.679 | 16.9 | 1/230 · 1/112 (negligible) |
+| 5m | 1:1.5 | 2.29→2.24 | $4.330→$8.678 | -$1.205→-$2.513 | 14.5 | 0 · 0 |
+| 15m | 1:1.5 | 1.35→1.37 | $2.070→$4.609 | -$1.943→-$4.252 | 8.3 | 0 · 0 |
+
+PF y winrate se mantienen casi iguales en los 4 (subir el riesgo no
+cambia el edge, sólo el tamaño de posición) — **excepto en 1m**, donde a
+$600 el tamaño de posición promedio (30.4 contratos) queda tan cerca del
+tope de 40 que **el 32% de las operaciones de test topan el límite**: en
+esos trades el riesgo real termina siendo MENOR al nominal de $600 (el
+motor no puede pedir más de 40 contratos), así que el neto de 1m a $600
+NO es el doble limpio de $300 — está parcialmente frenado por el tope de
+la cuenta. En 3m/5m/15m el tope no se toca prácticamente nunca, así que
+ahí sí escala limpio.
+
+**Drawdown**: el peor caso visto es 15m a 1:1.5/$600 (-$4.252) — más del
+doble que a $300. Si vas a subir a $600, confirmá contra el límite de
+pérdida máxima/diaria de tu cuenta fondeada específica antes de asumirlo,
+sobre todo en 15m con el R:R vigente (1.5); a 1:0.75 el drawdown de 15m a
+$600 es bastante menor (-$1.808), coherente con el hallazgo de la sección
+anterior de que 1:0.75 es más robusto en ese timeframe.
+
 ## R:R más bajo (1:0.75 y 1:0.5) para cuentas de fondeo
 
 Hipótesis a probar: un R:R más chico (TP más cerca que el SL) sube el
