@@ -357,3 +357,136 @@ def summarize(trades_df: pd.DataFrame, orders_placed: int, orders_filled: int) -
         "max_drawdown_usd": drawdown.min(),
         "avg_bars_held": trades_df["bars_held"].mean(),
     }
+
+
+@dataclass
+class HtfOnlyParams:
+    """Config para `simulate_htf_only`: prueba la mecánica CRT pura (sin
+    la refinación por FVG en un timeframe menor), pensada para correr
+    directo sobre datos NATIVOS de un solo timeframe (ej. 4h) con mucho
+    más historial del que tenemos en 15m/5m."""
+
+    sl_buffer_atr: float = 0.05
+    atr_len: int = 14
+    min_rr: float = 0.0
+
+    max_risk_usd: float = 300.0
+    point_value_usd: float = 2.0
+    max_qty: int = 40
+
+    commission_round_turn_usd: float = 0.0
+    slippage_ticks: float = 0.0
+    tick_size: float = 0.25
+    tie_break: str = "sl_first"
+
+
+def simulate_htf_only(df: pd.DataFrame, p: HtfOnlyParams) -> tuple[pd.DataFrame, dict]:
+    """
+    Versión SIN la capa de FVG en timeframe menor: en cuanto el barrido
+    C1->C2 se confirma (C2 cierra), se entra a MERCADO en el open de la
+    vela siguiente (C3) — tal como describe CRT clásico ("enter at the
+    open of C3"). SL = mecha de C2 + buffer, TP = extremo opuesto de C1
+    (fijo). Una operación a la vez, sin look-ahead: la señal se decide
+    al cierre de C2, se opera recién en la vela siguiente.
+    """
+    o, h, l, c = df["open"].values, df["high"].values, df["low"].values, df["close"].values
+    n = len(df)
+    atr = wilder_atr(df["high"], df["low"], df["close"], p.atr_len).values
+    ts = df.index
+
+    state = "none"  # none -> pending (entra en el open de esta vela) -> open
+    pending_is_long = False
+    pending_sl = np.nan
+    pending_tp = np.nan
+    entry_price = entry_bar = None
+    pending_qty = 0
+
+    trades = []
+    orders_placed = 0
+    orders_filled = 0
+
+    for i in range(n):
+        if state == "pending":
+            entry_price = o[i]
+            entry_bar = i
+            state = "open"
+            orders_filled += 1
+
+        if state == "open":
+            if pending_is_long:
+                hit_sl, hit_tp = l[i] <= pending_sl, h[i] >= pending_tp
+            else:
+                hit_sl, hit_tp = h[i] >= pending_sl, l[i] <= pending_tp
+
+            exit_price = reason = None
+            slip = p.slippage_ticks * p.tick_size
+            if hit_sl and hit_tp and p.tie_break == "tp_first":
+                hit_sl = False
+            if hit_sl:
+                exit_price, reason = pending_sl, "SL"
+            elif hit_tp:
+                exit_price, reason = pending_tp, "TP"
+
+            if exit_price is not None:
+                direction = 1 if pending_is_long else -1
+                if reason == "SL":
+                    exit_price = exit_price - direction * slip
+                gross_pnl_usd = direction * (exit_price - entry_price) * pending_qty * p.point_value_usd
+                commission_usd = p.commission_round_turn_usd * pending_qty
+                pnl_usd = gross_pnl_usd - commission_usd
+                risk_dist = abs(entry_price - pending_sl)
+                risk_usd = risk_dist * pending_qty * p.point_value_usd
+                trades.append(
+                    {
+                        "entry_time": ts[entry_bar],
+                        "exit_time": ts[i],
+                        "direction": "long" if pending_is_long else "short",
+                        "entry": entry_price,
+                        "exit": exit_price,
+                        "qty": pending_qty,
+                        "reason": reason,
+                        "pnl_usd": pnl_usd,
+                        "r_multiple": pnl_usd / risk_usd if risk_usd > 0 else np.nan,
+                        "bars_held": i - entry_bar,
+                    }
+                )
+                state = "none"
+
+        if state == "none" and i >= 1 and not np.isnan(atr[i]):
+            sweep_high = h[i] > h[i - 1] and c[i] <= h[i - 1]
+            sweep_low = l[i] < l[i - 1] and c[i] >= l[i - 1]
+            is_long = None
+            if sweep_high and not sweep_low:
+                is_long = False
+                target = l[i - 1]
+                sl_ref = h[i]
+            elif sweep_low and not sweep_high:
+                is_long = True
+                target = h[i - 1]
+                sl_ref = l[i]
+
+            if is_long is not None:
+                buf = atr[i] * p.sl_buffer_atr
+                sl_level = sl_ref - buf if is_long else sl_ref + buf
+                # entrada aproximada = cierre de C2 (todavía no sabemos el open de C3)
+                risk_dist_approx = abs(c[i] - sl_level)
+                reward_dist_approx = abs(target - c[i])
+                rr_ok = risk_dist_approx > 0 and (reward_dist_approx / risk_dist_approx) >= p.min_rr
+                if risk_dist_approx > 0 and rr_ok:
+                    risk_usd_per_contract = risk_dist_approx * p.point_value_usd
+                    qty = (
+                        int(min(p.max_qty, np.floor(p.max_risk_usd / risk_usd_per_contract)))
+                        if risk_usd_per_contract > 0
+                        else 0
+                    )
+                    if qty >= 1:
+                        pending_is_long = is_long
+                        pending_sl = sl_level
+                        pending_tp = target
+                        pending_qty = qty
+                        state = "pending"
+                        orders_placed += 1
+
+    trades_df = pd.DataFrame(trades)
+    summary = summarize(trades_df, orders_placed, orders_filled)
+    return trades_df, summary

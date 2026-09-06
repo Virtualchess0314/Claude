@@ -22,18 +22,50 @@ con split train/test 70/30 (ver `runs/2026-09-06_*.csv`):
 | 5m / 15m (ambos nativos) | 22-52 operaciones | 0.42-0.65 | Claramente negativo |
 | 15m / 4h (HTF derivado por resample) | **sólo 5-11 operaciones** | 1.50-2.60 | Se ve muy bien pero la muestra es demasiado chica para confiar — con 5 meses de historial, un rango de 4h da muy pocos setups. Cualquier par de trades que cambie de resultado da vuelta el número entero. |
 
-**Ninguna combinación tiene todavía una muestra grande Y un profit
-factor por encima de 1 al mismo tiempo.** El caso de 4h es el más
-interesante para seguir explorando, pero necesita mucho más historial
-(varios años de datos nativos de 1h/4h, no derivados de 15m) antes de
-que esa muestra de 5-11 operaciones se vuelva algo confiable.
+**Ninguna combinación tenía todavía una muestra grande Y un profit
+factor por encima de 1 al mismo tiempo.**
+
+## Segunda vuelta: mecánica CRT pura sobre 6+ años de 4h nativo — sin edge confirmado
+
+Se consiguió el export nativo de MNQ 4h (10.295 velas, 2020-01-01 a
+2026-09-04 — mucho más historial que 15m/5m). Con esa muestra se puede
+probar la mecánica CRT **sin** la capa de FVG en timeframe menor:
+entrar a MERCADO en el open de la vela siguiente al cierre del barrido
+(`simulate_htf_only` en `engine.py`), SL = mecha del barrido + buffer,
+TP = extremo opuesto de C1. Barrido completo en
+`runs/2026-09-06_mnq4h_native_htf_only_barrido.csv`.
+
+| Buffer de SL | Muestra (train/test) | PF train/test | Winrate train/test |
+|---|---|---|---|
+| 0.05×ATR (SL ajustado, como pide la teoría) | 1710/586 | 0.62/0.83 | 30%/36% |
+| 0.3×ATR | 1379/424 | 0.66/0.84 | 37%/43% |
+| 0.5×ATR | 1145/300 | 0.75/0.94 | 45%/51% |
+| 1.0×ATR (SL bien ancho) | 659/103 | 0.93/1.14 | 59%/67% |
+
+**Con SL ajustado a la mecha (lo que pide la teoría CRT tal cual) y
+muestra grande (1700+ operaciones), el resultado es un "sin edge" muy
+sólido** — PF claramente por debajo de 1 en train y test, winrate de
+apenas 28-36%. Esto confirma con muestra real la misma sospecha que ya
+había surgido en `fvg_continuation`: un SL pegado al nivel de invalidez
+(acá, la mecha del barrido) se lleva puesto la mayoría de los setups que
+en realidad eran correctos, porque el precio suele extenderse un poco
+más allá antes de revertir.
+
+Alejar el SL ayuda muchísimo (winrate hasta 67%) pero la muestra se
+achica al mismo ritmo, y el mejor caso (buffer 1.0×ATR) todavía tiene
+train por debajo de 1 (0.93) aunque el test cruce a 1.14 — mejora clara
+pero sin confirmar del todo en ambos períodos. **Es la pista más
+prometedora de las tres variantes de FVG probadas en esta sesión, pero
+todavía no cruza la barra de "validado".**
 
 ## Próximo paso sugerido
 
-Conseguir más historial nativo (ideal: 1-2 años de MNQ en 15m o 5m, o
-directamente velas nativas de 1h/4h) para poder correr el barrido de
-HTF=4h con una muestra que valga la pena analizar. Con los datos
-actuales (5 meses de 15m) no alcanza.
+Si se retoma esto: probar SL bien ancho (0.75-1.5×ATR más allá de la
+mecha) como línea base, en vez del ajustado que pide la teoría clásica —
+y una vez encontrado un buffer que funcione en el HTF puro, recién ahí
+sumarle la capa de FVG en timeframe menor (para lo cual sigue haciendo
+falta más historial nativo de 15m/5m del que tenemos hoy — sólo 5
+meses).
 
 ## Uso
 
