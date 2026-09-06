@@ -99,6 +99,34 @@ print(trades.tail(20))
    el 100% del equity expuesto (long o short), así que el drawdown puede
    ser grande incluso con PF razonable.
 
+## Variante con SL/TP por ATR (`optimize_atr.py`)
+
+El `.pine` original no tiene SL/TP — está siempre adentro del mercado (ver
+arriba). `engine.py` agrega una segunda función, `simulate_atr_stops()`,
+para evaluar el cruce de la Hull MA como GATILLO de entrada de una
+estrategia con salidas administradas: SL = `sl_atr_mult` × ATR, TP =
+`rr_target` × riesgo (una operación a la vez, se ignoran señales nuevas
+mientras hay una posición abierta — más detalle en el docstring de la
+función).
+
+```bash
+# Barrido de SL (en múltiplos de ATR) y R:R (1:1 / 1:1.5 / 1:2) para UN timeframe
+python3 optimize_atr.py ruta/a/tus_datos_5m.csv \
+    --sl-atr-mult 0.5,0.75,1.0,1.5,2.0,3.0 \
+    --rr-target 1.0,1.5,2.0 \
+    --length 55 --mode Hma
+```
+
+Corré esto **una vez por cada CSV/timeframe** (1m, 3m, 5m, 10m, 15m no son
+derivables entre sí salvo múltiplos exactos — hace falta el export nativo
+de cada uno). Mismo criterio train/test que `optimize.py`: mirá
+`test_trades` (mínimo de muestra), `test_profit_factor`/`train_profit_factor`
+parecidos (no sobreajustado) y `test_expectancy_r` — con R:R fijo, el
+`win_rate` de equilibrio (breakeven) es `1 / (1 + rr_target)`: 50% para
+1:1, 40% para 1:1.5, 33% para 1:2. Si el `test_win_rate` de una
+combinación no supera ese umbral con margen, no hay edge ahí por más que
+el profit factor de una sola corrida parezca bueno.
+
 ## Limitaciones a tener en cuenta
 
 - El fill se simula a **cierre de la vela siguiente a la señal**
