@@ -159,18 +159,21 @@ split train/test 70/30, comisión+slippage reales):
 | Timeframe | Sin filtro (PF train/test) | Mejor con bias (PF train/test) |
 |---|---|---|
 | 1m | 1.50 / **2.30** | 2.68-4.06 / 0.93-0.94 (peor en TODOS los `ema_len`) |
+| 3m | 1.30 / **1.58** | 1.00-1.28 / 0.91-1.09 (peor en TODOS los `ema_len`, incluso en TRAIN) |
 | 5m | 2.08 / **2.29** | 2.23-4.96 / 0.72-1.31 (peor en TODOS los `ema_len`) |
 | 15m | 1.46 / 1.35 | 1.48 / **1.51** (con EMA 20; mejora chica, ~40% menos operaciones) |
 
 En 1m y 5m el patrón es el mismo que con la EMA del mismo timeframe: el
 filtro **mejora train y arruina test** de forma consistente en las cuatro
 longitudes de EMA probadas — señal clara de que el filtro está sacando
-justo las operaciones de reversión que funcionaban, no ruido. En 15m la
-mejora con EMA 20 es real pero chica y con bastante menos muestra (73/38
-operaciones train/test vs 90/44 sin filtro) como para confirmarla con este
-único split. **Conclusión: no usar bias por HTF tampoco** — refuerza que
-esta estrategia funciona mejor operando la reversión sin filtro
-direccional, en cualquier timeframe. No se expone en el `.pine`.
+justo las operaciones de reversión que funcionaban, no ruido. En 3m el
+filtro ni siquiera mejora train (PF cae a ~1.00-1.28 vs 1.30 sin filtro) —
+la peor de las cuatro corridas. En 15m la mejora con EMA 20 es real pero
+chica y con bastante menos muestra (73/38 operaciones train/test vs 90/44
+sin filtro) como para confirmarla con este único split. **Conclusión: no
+usar bias por HTF tampoco** — confirmado en 4 de 4 timeframes probados
+(1m/3m/5m/15m), refuerza que esta estrategia funciona mejor operando la
+reversión sin filtro direccional. No se expone en el `.pine`.
 
 ## Comisión y slippage (`cost_sensitivity.py`)
 
