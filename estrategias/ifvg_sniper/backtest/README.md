@@ -354,6 +354,26 @@ real de "que se te vaya el precio" no es slippage — es no llegar a cargar
 la orden dentro de esa primera vela en el ~60% de los casos más ajustados;
 una vez cargada, se llena sola sin que tengas que reaccionar de nuevo.
 
+## Ventana horaria ajustada a disponibilidad real (Madrid 9:30-22:00)
+
+Objetivo: operar 1-2 veces por día, disponible de 9:30 a 22:00 hora de
+Madrid (con DST activo en ambos lados en sep-2026, Madrid = NY + 6h →
+equivale a **NY 03:30-16:00**).
+
+- **5m**: la ventana vigente (NY 08:00-16:00 = Madrid 14:00-22:00) ya
+  queda completamente adentro del horario disponible y da ~1.8-1.9
+  operaciones/día — no hace falta tocar nada. **Probado y descartado:**
+  extenderla a todo el horario disponible (NY 03:30-16:00) sube la
+  frecuencia a ~2.6-2.8/día pero **empeora el PF de forma clara** (train
+  2.08→1.49, test 2.29→1.46) — confirma que el edge está en la sesión NY
+  específicamente, no en tener más horas de mercado abierto.
+- **15m**: no tiene ventana horaria (corre 24h) — si se llega a operar
+  este timeframe, acotarlo a NY 03:30-16:00 (mismo horario de arriba)
+  pierde sólo 13 de 137 operaciones (9%) y el PF de test **mejora**
+  (1.35→1.52); train baja un poco (1.46→1.32) pero sigue siendo la
+  config más consistente de las dos. Casi sin costo, recomendable si se
+  usa 15m en paralelo con 5m para no perderse señales fuera de horario.
+
 ## Limitaciones a tener en cuenta
 
 - Si en la misma vela se tocan SL y TP, el motor asume que el SL se ejecutó
