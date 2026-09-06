@@ -149,6 +149,29 @@ sentido: esta estrategia es de reversión (opera el rechazo en una zona ya
 invertida), así que forzar alineación con una tendencia mayor filtra
 justamente las mejores señales de reversión. No se expone en el `.pine`.
 
+**Filtro de BIAS por timeframe mayor (HTF) — probado y descartado:**
+variante de la idea anterior pero calculando el bias en 1h (derivado por
+resample del propio CSV) en vez del mismo timeframe — `engine.py` soporta
+`htf_bias_ema_len`/`htf_bias_rule` (ver `compute_htf_bias()`). Resultado
+con las configs vigentes de cada timeframe (EMA de 1h en 20/50/100/200,
+split train/test 70/30, comisión+slippage reales):
+
+| Timeframe | Sin filtro (PF train/test) | Mejor con bias (PF train/test) |
+|---|---|---|
+| 1m | 1.50 / **2.30** | 2.68-4.06 / 0.93-0.94 (peor en TODOS los `ema_len`) |
+| 5m | 2.08 / **2.29** | 2.23-4.96 / 0.72-1.31 (peor en TODOS los `ema_len`) |
+| 15m | 1.46 / 1.35 | 1.48 / **1.51** (con EMA 20; mejora chica, ~40% menos operaciones) |
+
+En 1m y 5m el patrón es el mismo que con la EMA del mismo timeframe: el
+filtro **mejora train y arruina test** de forma consistente en las cuatro
+longitudes de EMA probadas — señal clara de que el filtro está sacando
+justo las operaciones de reversión que funcionaban, no ruido. En 15m la
+mejora con EMA 20 es real pero chica y con bastante menos muestra (73/38
+operaciones train/test vs 90/44 sin filtro) como para confirmarla con este
+único split. **Conclusión: no usar bias por HTF tampoco** — refuerza que
+esta estrategia funciona mejor operando la reversión sin filtro
+direccional, en cualquier timeframe. No se expone en el `.pine`.
+
 ## Comisión y slippage (`cost_sensitivity.py`)
 
 ```bash
