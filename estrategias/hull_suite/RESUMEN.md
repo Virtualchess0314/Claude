@@ -1,5 +1,15 @@
 # Hull Suite (con SL/TP por ATR) — resumen de factibilidad (2026-09-06)
 
+## Veredicto: DESCARTADA
+
+El usuario decidió descartar Hull Suite como estrategia (todos los
+timeframes, no sólo 15m) después de ver estos resultados — incluso con
+los winrates de 5m y 1m por encima del breakeven de su R:R (ver tabla más
+abajo), no se considera viable para seguir adelante. Se documenta acá el
+análisis completo para que quede el registro de por qué no se avanzó, por
+si en el futuro surge una variante distinta que valga la pena reconsiderar
+(otra señal de entrada, otro filtro, más historial).
+
 Instrumento: **MNQ** (Micro E-mini Nasdaq-100, CME). Datos exportados de
 TradingView por el usuario:
 
