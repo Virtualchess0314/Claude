@@ -61,6 +61,15 @@ class Params:
     # siempre). Idea: operar el retest IFVG sólo a favor de la tendencia mayor.
     trend_ema_len: Optional[int] = None
 
+    # filtro opcional de BIAS por timeframe MAYOR (HTF): sólo tomar longs si
+    # el cierre del último HTF cerrado > su EMA(htf_bias_ema_len), shorts si
+    # está por debajo. A diferencia de trend_ema_len (misma vela/timeframe),
+    # acá el bias se calcula en un timeframe más grande (htf_bias_rule, ej.
+    # "1h") derivado por resample del propio CSV — ver compute_htf_bias().
+    # None = sin filtro.
+    htf_bias_ema_len: Optional[int] = None
+    htf_bias_rule: str = "1h"
+
     # ── Costos reales ────────────────────────────────────────────────────
     # comisión "round-turn" (ida + vuelta) por contrato, en USD: comisión del
     # bróker/Tradovate + fee de CME + fee regulatorio NFA, todo junto.
@@ -146,6 +155,35 @@ def wilder_atr(high: pd.Series, low: pd.Series, close: pd.Series, length: int) -
     return pd.Series(vals, index=tr.index)
 
 
+def compute_htf_bias(df: pd.DataFrame, rule: str, ema_len: int) -> np.ndarray:
+    """
+    Bias direccional de un timeframe MAYOR (HTF), derivado por resample del
+    mismo df (sólo válido si `rule` es múltiplo exacto del timeframe de
+    `df` — ver resample_ohlc en data.py). +1 = alcista (cierre HTF por
+    encima de su EMA), -1 = bajista, NaN mientras no hay suficiente
+    historia para la EMA.
+
+    Sin look-ahead: el bias de una vela HTF recién se conoce en SU cierre,
+    que coincide justo con el timestamp de la vela HTF siguiente (label del
+    resample = inicio de la vela, closed="left"). Por eso se usa
+    `.shift(1)` antes de pegarlo de vuelta al timeframe chico — así, en
+    cualquier vela chica con timestamp >= al inicio de una vela HTF, el
+    bias disponible es el de la ÚLTIMA vela HTF que ya cerró antes de ese
+    instante, nunca el de la que todavía está en curso.
+    """
+    from data import resample_ohlc
+
+    htf = resample_ohlc(df, rule)
+    htf_ema = htf["close"].ewm(span=ema_len, adjust=False).mean()
+    raw_bias = pd.Series(np.sign(htf["close"].to_numpy() - htf_ema.to_numpy()), index=htf.index)
+    bias_known = raw_bias.shift(1).to_frame("bias")
+
+    merged = pd.merge_asof(
+        df[[]], bias_known, left_index=True, right_index=True, direction="backward"
+    )
+    return merged["bias"].to_numpy()
+
+
 def _within_session(ts: pd.Timestamp, p: Params) -> bool:
     if not p.use_session_close:
         return True
@@ -170,6 +208,11 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
         if p.trend_ema_len
         else None
     )
+    htf_bias = (
+        compute_htf_bias(df, p.htf_bias_rule, p.htf_bias_ema_len)
+        if p.htf_bias_ema_len
+        else None
+    )
 
     zones: list[Zone] = []
     next_id = 1
@@ -181,6 +224,8 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     pending_sl = np.nan
     pending_tp = np.nan
     pending_qty = 0
+    pending_signal_bar: Optional[int] = None  # vela en la que se decidió la señal (alerta)
+    entry_delay_bars: Optional[int] = None    # velas entre la señal y el fill real
     worst_since_entry = np.nan  # low más bajo (long) / high más alto (short) desde que abrió
     best_since_entry = np.nan   # high más alto (long) / low más bajo (short) desde que abrió
     moved_to_be = False
@@ -242,6 +287,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 if l[i] <= pending_limit:
                     entry_price = min(pending_limit, o[i]) if o[i] <= pending_limit else pending_limit
                     entry_bar = i
+                    entry_delay_bars = i - pending_signal_bar
                     state = "open"
                     orders_filled += 1
                     worst_since_entry = l[i]
@@ -257,6 +303,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 if h[i] >= pending_limit:
                     entry_price = max(pending_limit, o[i]) if o[i] >= pending_limit else pending_limit
                     entry_bar = i
+                    entry_delay_bars = i - pending_signal_bar
                     state = "open"
                     orders_filled += 1
                     worst_since_entry = h[i]
@@ -401,6 +448,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         "pnl_usd": pnl_usd,
                         "r_multiple": pnl_usd / risk_usd if risk_usd > 0 else np.nan,
                         "bars_held": i - entry_bar,
+                        "entry_delay_bars": entry_delay_bars,
                         "mae_frac": mae_dist / risk_dist if risk_dist > 0 else np.nan,
                         "mfe_frac": mfe_dist / reward_dist if reward_dist > 0 else np.nan,
                         "scaled_in": scaled_in,
@@ -430,6 +478,10 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         aligned = (c[i] > trend_ema[i]) if is_long else (c[i] < trend_ema[i])
                         if not aligned:
                             continue
+                    if htf_bias is not None:
+                        b = htf_bias[i]
+                        if np.isnan(b) or (b > 0) != is_long:
+                            continue
                     # nivel de confirmación "de catálogo" (comportamiento original)
                     catalog_entry = z.broken_boundary + tol if is_long else z.broken_boundary - tol
                     risk_r = p.sl_atr_mult * a
@@ -455,6 +507,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         pending_qty = qty
                         pending_sl = sl_level
                         pending_tp = tp_level
+                        pending_signal_bar = i
                         state = "waiting"
                         orders_placed += 1
                         break

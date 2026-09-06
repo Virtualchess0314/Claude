@@ -149,6 +149,32 @@ sentido: esta estrategia es de reversión (opera el rechazo en una zona ya
 invertida), así que forzar alineación con una tendencia mayor filtra
 justamente las mejores señales de reversión. No se expone en el `.pine`.
 
+**Filtro de BIAS por timeframe mayor (HTF) — probado y descartado:**
+variante de la idea anterior pero calculando el bias en 1h (derivado por
+resample del propio CSV) en vez del mismo timeframe — `engine.py` soporta
+`htf_bias_ema_len`/`htf_bias_rule` (ver `compute_htf_bias()`). Resultado
+con las configs vigentes de cada timeframe (EMA de 1h en 20/50/100/200,
+split train/test 70/30, comisión+slippage reales):
+
+| Timeframe | Sin filtro (PF train/test) | Mejor con bias (PF train/test) |
+|---|---|---|
+| 1m | 1.50 / **2.30** | 2.68-4.06 / 0.93-0.94 (peor en TODOS los `ema_len`) |
+| 3m | 1.30 / **1.58** | 1.00-1.28 / 0.91-1.09 (peor en TODOS los `ema_len`, incluso en TRAIN) |
+| 5m | 2.08 / **2.29** | 2.23-4.96 / 0.72-1.31 (peor en TODOS los `ema_len`) |
+| 15m | 1.46 / 1.35 | 1.48 / **1.51** (con EMA 20; mejora chica, ~40% menos operaciones) |
+
+En 1m y 5m el patrón es el mismo que con la EMA del mismo timeframe: el
+filtro **mejora train y arruina test** de forma consistente en las cuatro
+longitudes de EMA probadas — señal clara de que el filtro está sacando
+justo las operaciones de reversión que funcionaban, no ruido. En 3m el
+filtro ni siquiera mejora train (PF cae a ~1.00-1.28 vs 1.30 sin filtro) —
+la peor de las cuatro corridas. En 15m la mejora con EMA 20 es real pero
+chica y con bastante menos muestra (73/38 operaciones train/test vs 90/44
+sin filtro) como para confirmarla con este único split. **Conclusión: no
+usar bias por HTF tampoco** — confirmado en 4 de 4 timeframes probados
+(1m/3m/5m/15m), refuerza que esta estrategia funciona mejor operando la
+reversión sin filtro direccional. No se expone en el `.pine`.
+
 ## Comisión y slippage (`cost_sensitivity.py`)
 
 ```bash
@@ -207,6 +233,158 @@ Trade-offs a decidir según prioridad, no hay un lado objetivamente mejor:
   apalancamiento, no una mejora real de la estrategia. Confirmá que tu
   cuenta tolera un drawdown de ~$2.800 (peor caso visto, 1:1.5 a $500)
   dentro de sus reglas de pérdida máxima antes de subir el riesgo.
+
+## maxRiskUSD 300 vs 600, en los 4 timeframes
+
+Mismo test de arriba (R:R vigente / 1:0.75 / 1:0.5) repetido con
+`max_risk_usd=600` en vez de 300, para ver si escala limpio o empieza a
+toparse con `maxQty=40`:
+
+| Timeframe | R:R | PF test (300→600) | Neto test (300→600) | Drawdown test (300→600) | Qty prom. | Trades topados a qty=40 (train/test) |
+|---|---|---|---|---|---|---|
+| 1m | 1:1 | 2.30→2.16 | $2.174→$3.925 | -$694→-$1.413 | 30.4 | **2/39 · 7/22 (32% del test)** |
+| 3m | 1:1 | 1.58→1.59 | $6.707→$14.070 | -$1.276→-$2.679 | 16.9 | 1/230 · 1/112 (negligible) |
+| 5m | 1:1.5 | 2.29→2.24 | $4.330→$8.678 | -$1.205→-$2.513 | 14.5 | 0 · 0 |
+| 15m | 1:1.5 | 1.35→1.37 | $2.070→$4.609 | -$1.943→-$4.252 | 8.3 | 0 · 0 |
+
+PF y winrate se mantienen casi iguales en los 4 (subir el riesgo no
+cambia el edge, sólo el tamaño de posición) — **excepto en 1m**, donde a
+$600 el tamaño de posición promedio (30.4 contratos) queda tan cerca del
+tope de 40 que **el 32% de las operaciones de test topan el límite**: en
+esos trades el riesgo real termina siendo MENOR al nominal de $600 (el
+motor no puede pedir más de 40 contratos), así que el neto de 1m a $600
+NO es el doble limpio de $300 — está parcialmente frenado por el tope de
+la cuenta. En 3m/5m/15m el tope no se toca prácticamente nunca, así que
+ahí sí escala limpio.
+
+**Drawdown**: el peor caso visto es 15m a 1:1.5/$600 (-$4.252) — más del
+doble que a $300. Si vas a subir a $600, confirmá contra el límite de
+pérdida máxima/diaria de tu cuenta fondeada específica antes de asumirlo,
+sobre todo en 15m con el R:R vigente (1.5); a 1:0.75 el drawdown de 15m a
+$600 es bastante menor (-$1.808), coherente con el hallazgo de la sección
+anterior de que 1:0.75 es más robusto en ese timeframe.
+
+## R:R más bajo (1:0.75 y 1:0.5) para cuentas de fondeo
+
+Hipótesis a probar: un R:R más chico (TP más cerca que el SL) sube el
+winrate y acorta las rachas de operaciones perdedoras seguidas — algo que
+puede convenir en una cuenta fondeada con límite de pérdida diaria/máxima,
+aunque baje la plata neta. Se probó `rr_target=0.75` y `0.5` en los 4
+timeframes con datos reales (manteniendo el resto de la config vigente de
+cada uno), split train/test 70/30, comisión+slippage reales:
+
+`ATR(14)` es el promedio del período de test de cada timeframe (varía
+vela a vela; esto es sólo la referencia típica). SL = `sl_atr_mult` ×
+ATR (fijo por timeframe, no cambia con el R:R); TP = R:R × SL. En dólares,
+multiplicar por `point_value_usd=2` (MNQ) — ej. 1m: SL 9.6 pts ≈ $19.
+
+| Timeframe | R:R | ATR(14) prom. (test) | SL (pts) | TP (pts) | Winrate train/test | PF train/test | Neto test | Drawdown test | Racha SL train/test |
+|---|---|---|---|---|---|---|---|---|---|
+| 1m | 1:1 (vigente) | 9.6 | 9.6 | 9.6 | 69%/77% | 1.50/**2.30** | $2.174 | -$694 | 3/2 |
+| 1m | 1:0.75 | 9.6 | 9.6 | 7.2 | 77%/82% | 1.54/2.12 | $1.472 | -$651 | 2/2 |
+| 1m | 1:0.5 | 9.6 | 9.6 | 4.8 | 85%/86% | 1.46/1.61 | $596 | -$651 | 2/2 |
+| 3m | 1:1 (vigente) | 18.2 | 18.2 | 18.2 | 61%/66% | 1.30/**1.58** | $6.707 | -$1.276 | 6/3 |
+| 3m | 1:0.75 | 18.2 | 18.2 | 13.6 | 69%/72% | 1.35/1.49 | $4.718 | -$903 | 5/3 |
+| 3m | 1:0.5 | 18.2 | 18.2 | 9.1 | 79%/77% | 1.48/1.22 | $1.741 | -$1.334 | 4/2 |
+| 5m | 1:1.5 (vigente) | 24.1 | 18.1 | 27.2 | 60%/61% | 2.08/**2.29** | $4.330 | -$1.205 | 6/4 |
+| 5m | 1:0.75 | 24.1 | 18.1 | 13.6 | 73%/72% | 1.91/1.60 | $1.644 | -$1.205 | 2/4 |
+| 5m | 1:0.5 | 24.1 | 18.1 | 9.1 | 81%/78% | 2.07/1.34 | $745 | -$925 | 2/3 |
+| 15m | 1:1.5 (vigente) | 49.2 | 36.9 | 55.4 | 52%/50% | 1.46/1.35 | $2.070 | -$1.943 | 7/5 |
+| 15m | **1:0.75** | 49.2 | 36.9 | **27.7** | **69%/73%** | **1.55/1.82** | **$2.615** | **-$901** | **6/3** |
+| 15m | 1:0.5 | 49.2 | 36.9 | 18.5 | 75%/75% | 1.48/1.34 | $979 | -$1.496 | 3/3 |
+
+**En 1m, 3m y 5m el patrón confirma la hipótesis sólo a medias:** sube el
+winrate y achica algo la racha de SL, pero el profit factor y sobre todo
+la plata neta de test caen bastante — en 3m y 5m, a 1:0.5 el PF de test
+queda apenas por encima de 1 (1.22 y 1.34) con muy poco neto. Es un
+trade-off real, no una mejora gratis: 1:0.75 es un punto medio razonable
+si lo que más importa es suavizar la curva, pero 1:0.5 cede demasiado
+edge para lo poco que reduce el riesgo de racha (que ya era bajo en 1m/5m
+con el R:R vigente).
+
+**En 15m, 1:0.75 es una mejora real, no un trade-off** — mejor PF en
+train Y test (1.35→1.82 en test), más neto en test, drawdown mucho menor
+(-$1.943→-$901) y racha de SL más corta. Con 90-93 operaciones en train y
+44 en test, tiene mejor base de muestra que 1m para confiar en el
+resultado. Candidato serio para reemplazar `rr_target=1.5` en 15m si se
+llega a operar ese timeframe — pendiente de confirmar con más historial y
+en el Strategy Tester de TradingView antes de llevarlo al `.pine`.
+
+## Cuándo se manda la señal, y cuánto tiempo hay hasta el fill real
+
+**Dónde se manda:** en el `.pine`, la señal se manda por la función
+`alert()` (`ifvg_sniper.pine` líneas ~333-347) — es un mecanismo
+DISTINTO de la etiqueta visual (`label.new`, líneas ~278-301), aunque las
+dos disparan en el mismo instante porque las controla el mismo par de
+flags (`orderPlacedLong`/`orderPlacedShort`, fijados cuando se encuentra
+una zona elegible, líneas ~197-210). O sea: la etiqueta que ves en el
+gráfico y la alerta que te llega al celular/mail se generan juntas, no una
+antes que la otra. Para que TradingView dispare esta alerta (y no la
+genérica de "Order fills", que llega recién cuando ya se llenó) hay que
+crearla eligiendo **"Any alert() function call"** como condición.
+
+**Cuándo exactamente, dentro de la vela:** la estrategia tiene
+`calc_on_every_tick = false` (`ifvg_sniper.pine` línea 49), así que TODO
+el script —incluida la detección de zona, el cálculo de `orderPlacedLong`/
+`Short` y el `alert()`— se recalcula UNA sola vez por vela, al **cierre**
+de la vela confirmada. No hay parpadeo intrabar ni repintado: la señal no
+puede aparecer y desaparecer dentro de la misma vela en formación, sale
+una vez, al cierre, y ya.
+
+**Cuánto tiempo real pasa hasta que se llena** (medido en el backtest:
+velas entre que se decide la señal y que el precio efectivamente toca el
+nivel límite, config vigente de cada timeframe):
+
+| Timeframe | Mediana | p75 | p90 | % llenadas en la vela siguiente | % llenadas en ≤10 velas |
+|---|---|---|---|---|---|
+| 1m | 1 vela (1 min) | 4 velas | 15 velas | 62% | 84% |
+| 3m | 1 vela (3 min) | 3 velas | 9 velas | 63% | 91% |
+| 5m | 1 vela (5 min) | 6 velas | 15 velas | 58% | 82% |
+| 15m | 1 vela (15 min) | 4 velas | 13 velas | 61% | 86% |
+
+En **~60% de las operaciones, el fill ocurre en la vela inmediatamente
+siguiente a la señal** — ese es el caso más ajustado: tenés sólo el
+equivalente a 1 vela completa (1/3/5/15 min según el timeframe) para
+cargar la orden límite en el bróker antes de que el precio la toque. El
+otro ~40% da bastante más margen (mediana del `p75` en 3-6 velas), y hay
+una cola larga de operaciones que tardan mucho más en tocarse (hasta
+40-57 velas, cerca del límite de `max_ifvg_age=60`) — en esos casos hay
+de sobra. Como la entrada es con orden LÍMITE (no de mercado), el riesgo
+real de "que se te vaya el precio" no es slippage — es no llegar a cargar
+la orden dentro de esa primera vela en el ~60% de los casos más ajustados;
+una vez cargada, se llena sola sin que tengas que reaccionar de nuevo.
+
+## Ventana horaria ajustada a disponibilidad real (Madrid 9:30-22:00)
+
+Objetivo: operar 1-2 veces por día, disponible de 9:30 a 22:00 hora de
+Madrid (con DST activo en ambos lados en sep-2026, Madrid = NY + 6h →
+equivale a **NY 03:30-16:00**).
+
+- **5m**: la ventana vigente (NY 08:00-16:00 = Madrid 14:00-22:00) ya
+  queda completamente adentro del horario disponible y da ~1.8-1.9
+  operaciones/día — no hace falta tocar nada. **Probado y descartado:**
+  extenderla a todo el horario disponible (NY 03:30-16:00) sube la
+  frecuencia a ~2.6-2.8/día pero **empeora el PF de forma clara** (train
+  2.08→1.49, test 2.29→1.46) — confirma que el edge está en la sesión NY
+  específicamente, no en tener más horas de mercado abierto.
+- **15m**: no tiene ventana horaria (corre 24h) — si se llega a operar
+  este timeframe, acotarlo a NY 03:30-16:00 (mismo horario de arriba)
+  pierde sólo 13 de 137 operaciones (9%) y el PF de test **mejora**
+  (1.35→1.52); train baja un poco (1.46→1.32) pero sigue siendo la
+  config más consistente de las dos. Casi sin costo, recomendable si se
+  usa 15m en paralelo con 5m para no perderse señales fuera de horario.
+- **1m y 3m con ventana NY 08-16 + R:R más bajo (1:0.75) — probado y
+  descartado:** en 1m, agregar la ventana NY rompe el edge por completo
+  (PF de test cae a 0.87-0.91, por debajo de 1, en ambos R:R) — confirma
+  con más detalle lo que ya decía la sección de abajo sobre la ventana NY
+  en otros timeframes. En 3m se mantiene decente con R:R vigente (1.0,
+  PF test 1.53) pero combinarlo con 1:0.75 lo empeora (PF test 1.49→1.28
+  sin ventana → con ventana). Además, ninguno de los dos baja lo
+  suficiente en frecuencia para el objetivo de 1-2 operaciones/día: con
+  la ventana quedan en 5.5/día (1m) y 7.3/día (3m), todavía muy por
+  encima — la ventana horaria atenúa el sobre-trading de estos
+  timeframes pero no lo resuelve. Para ese objetivo, 5m sigue siendo la
+  opción que encaja sin sacrificar edge (ver sección de arriba).
 
 ## Limitaciones a tener en cuenta
 

@@ -56,7 +56,7 @@ más datos — dado el patrón de 15m/30m, es bastante probable que sí.
 |---|---|
 | Ventana horaria NY (08-16 ET) | Ayuda en **5m únicamente**. Empeora en 3m, 10m, 15m, 30m. |
 | Filtro de volumen (`vol_mult=0.8`) | Sólo probado en 6 semanas de MNQ 5m con volumen: sube PF (1.63→1.90) pero muestra insuficiente para validar train/test. |
-| R:R más bajo (1:0.5, 1:0.75) | Peor en los tres timeframes — sube el winrate pero baja la plata neta. |
+| R:R más bajo (1:0.5, 1:0.75), probado en 1m/3m/5m/15m con datos reales | Sube el winrate y achica la racha de SL en los 4, pero en **1m/3m/5m** cuesta bastante PF/neto (1:0.5 casi sin edge en 3m/5m). **En 15m, 1:0.75 es distinto: mejora PF, neto Y drawdown a la vez** — candidato serio para ese timeframe. Detalle completo en `backtest/README.md`. |
 | R:R más alto (1:1.2 a 1:3) | 5m y 10m: el actual sigue siendo lo mejor. **3m: 1:1.2 es una mejora leve y consistente** ($7.120 vs $6.707); 1:2.0+ muestra señal de sobreajuste (PF de train cae a ~0.97) — no confiar en esos números pese al neto más alto. |
 | Breakeven-stop (mover SL a breakeven) | **No medible con datos de 5m** — los trades duran ~1-2 velas, la ambigüedad de "qué tocó primero" es demasiado grande (rango de PF entre cotas: 0.50 a 4.42). Necesita datos de 1 min o tick. |
 | Entrada más profunda (SL/TP fijos) | Empeora en 5m y 3m — filtra las operaciones más limpias (directas a TP). |
