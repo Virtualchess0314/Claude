@@ -310,6 +310,50 @@ resultado. Candidato serio para reemplazar `rr_target=1.5` en 15m si se
 llega a operar ese timeframe — pendiente de confirmar con más historial y
 en el Strategy Tester de TradingView antes de llevarlo al `.pine`.
 
+## Cuándo se manda la señal, y cuánto tiempo hay hasta el fill real
+
+**Dónde se manda:** en el `.pine`, la señal se manda por la función
+`alert()` (`ifvg_sniper.pine` líneas ~333-347) — es un mecanismo
+DISTINTO de la etiqueta visual (`label.new`, líneas ~278-301), aunque las
+dos disparan en el mismo instante porque las controla el mismo par de
+flags (`orderPlacedLong`/`orderPlacedShort`, fijados cuando se encuentra
+una zona elegible, líneas ~197-210). O sea: la etiqueta que ves en el
+gráfico y la alerta que te llega al celular/mail se generan juntas, no una
+antes que la otra. Para que TradingView dispare esta alerta (y no la
+genérica de "Order fills", que llega recién cuando ya se llenó) hay que
+crearla eligiendo **"Any alert() function call"** como condición.
+
+**Cuándo exactamente, dentro de la vela:** la estrategia tiene
+`calc_on_every_tick = false` (`ifvg_sniper.pine` línea 49), así que TODO
+el script —incluida la detección de zona, el cálculo de `orderPlacedLong`/
+`Short` y el `alert()`— se recalcula UNA sola vez por vela, al **cierre**
+de la vela confirmada. No hay parpadeo intrabar ni repintado: la señal no
+puede aparecer y desaparecer dentro de la misma vela en formación, sale
+una vez, al cierre, y ya.
+
+**Cuánto tiempo real pasa hasta que se llena** (medido en el backtest:
+velas entre que se decide la señal y que el precio efectivamente toca el
+nivel límite, config vigente de cada timeframe):
+
+| Timeframe | Mediana | p75 | p90 | % llenadas en la vela siguiente | % llenadas en ≤10 velas |
+|---|---|---|---|---|---|
+| 1m | 1 vela (1 min) | 4 velas | 15 velas | 62% | 84% |
+| 3m | 1 vela (3 min) | 3 velas | 9 velas | 63% | 91% |
+| 5m | 1 vela (5 min) | 6 velas | 15 velas | 58% | 82% |
+| 15m | 1 vela (15 min) | 4 velas | 13 velas | 61% | 86% |
+
+En **~60% de las operaciones, el fill ocurre en la vela inmediatamente
+siguiente a la señal** — ese es el caso más ajustado: tenés sólo el
+equivalente a 1 vela completa (1/3/5/15 min según el timeframe) para
+cargar la orden límite en el bróker antes de que el precio la toque. El
+otro ~40% da bastante más margen (mediana del `p75` en 3-6 velas), y hay
+una cola larga de operaciones que tardan mucho más en tocarse (hasta
+40-57 velas, cerca del límite de `max_ifvg_age=60`) — en esos casos hay
+de sobra. Como la entrada es con orden LÍMITE (no de mercado), el riesgo
+real de "que se te vaya el precio" no es slippage — es no llegar a cargar
+la orden dentro de esa primera vela en el ~60% de los casos más ajustados;
+una vez cargada, se llena sola sin que tengas que reaccionar de nuevo.
+
 ## Limitaciones a tener en cuenta
 
 - Si en la misma vela se tocan SL y TP, el motor asume que el SL se ejecutó

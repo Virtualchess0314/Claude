@@ -224,6 +224,8 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     pending_sl = np.nan
     pending_tp = np.nan
     pending_qty = 0
+    pending_signal_bar: Optional[int] = None  # vela en la que se decidió la señal (alerta)
+    entry_delay_bars: Optional[int] = None    # velas entre la señal y el fill real
     worst_since_entry = np.nan  # low más bajo (long) / high más alto (short) desde que abrió
     best_since_entry = np.nan   # high más alto (long) / low más bajo (short) desde que abrió
     moved_to_be = False
@@ -285,6 +287,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 if l[i] <= pending_limit:
                     entry_price = min(pending_limit, o[i]) if o[i] <= pending_limit else pending_limit
                     entry_bar = i
+                    entry_delay_bars = i - pending_signal_bar
                     state = "open"
                     orders_filled += 1
                     worst_since_entry = l[i]
@@ -300,6 +303,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 if h[i] >= pending_limit:
                     entry_price = max(pending_limit, o[i]) if o[i] >= pending_limit else pending_limit
                     entry_bar = i
+                    entry_delay_bars = i - pending_signal_bar
                     state = "open"
                     orders_filled += 1
                     worst_since_entry = h[i]
@@ -444,6 +448,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         "pnl_usd": pnl_usd,
                         "r_multiple": pnl_usd / risk_usd if risk_usd > 0 else np.nan,
                         "bars_held": i - entry_bar,
+                        "entry_delay_bars": entry_delay_bars,
                         "mae_frac": mae_dist / risk_dist if risk_dist > 0 else np.nan,
                         "mfe_frac": mfe_dist / reward_dist if reward_dist > 0 else np.nan,
                         "scaled_in": scaled_in,
@@ -502,6 +507,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                         pending_qty = qty
                         pending_sl = sl_level
                         pending_tp = tp_level
+                        pending_signal_bar = i
                         state = "waiting"
                         orders_placed += 1
                         break
