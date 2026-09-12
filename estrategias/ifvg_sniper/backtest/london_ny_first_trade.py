@@ -1,7 +1,7 @@
 """
-Filtra los trades de IFVG Sniper a sólo el PRIMER trade de cada día que haya
-entrado dentro de la ventana [9:00 Londres, cierre de sesión NY (16:45 ET
-por defecto)].
+Filtra los trades de IFVG Sniper a sólo los primeros N trades de cada día
+que hayan entrado dentro de la ventana [9:00 Londres, cierre de sesión NY
+(16:45 ET por defecto)].
 
 No usa el filtro de ventana horaria propio del motor (compara contra hora
 ET fija) porque Londres y Nueva York no siempre difieren la misma cantidad
@@ -10,7 +10,7 @@ lados) — así que corre la simulación SIN ventana, y filtra acá con
 conversión de zona horaria real a Europe/London por cada vela.
 
 Uso:
-    python3 london_ny_first_trade.py datos_5m.csv --risk-usd 300
+    python3 london_ny_first_trade.py datos_5m.csv --risk-usd 300 --max-trades-per-day 2
 """
 
 from __future__ import annotations
@@ -68,6 +68,7 @@ def main():
     ap.add_argument("--london-start-hour", type=float, default=9.0)
     ap.add_argument("--session-close-hour", type=int, default=16)
     ap.add_argument("--session-close-minute", type=int, default=45)
+    ap.add_argument("--max-trades-per-day", type=int, default=1)
     args = ap.parse_args()
 
     df = load_csv(args.csv_path)
@@ -104,11 +105,15 @@ def main():
         summarize_subset(in_window),
     )
 
-    first_per_day = in_window.sort_values("entry_time").groupby("entry_ny_date", as_index=False).first()
-    print_summary(
-        f"Sólo el PRIMER trade del día dentro de esa ventana",
-        summarize_subset(first_per_day),
+    n = args.max_trades_per_day
+    capped = (
+        in_window.sort_values("entry_time")
+        .groupby("entry_ny_date", as_index=False, group_keys=False)
+        .head(n)
     )
+    label = "Sólo el PRIMER trade del día dentro de esa ventana" if n == 1 else \
+        f"Máximo {n} trades por día dentro de esa ventana (se toman los primeros {n} en orden cronológico)"
+    print_summary(label, summarize_subset(capped))
 
     n_days_with_signal = in_window["entry_ny_date"].nunique()
     n_days_total = df.index.tz_convert("America/New_York").normalize().nunique()
