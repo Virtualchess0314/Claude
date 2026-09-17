@@ -1,0 +1,60 @@
+Objetivo: antes de optimizar confluencias entre los 3 indicadores,
+medir si alguno tiene ventaja real por sí solo (`Params.only_source`).
+Si ninguno individual funciona, combinarlos no la va a crear.
+
+Datos: MNQ 5m (2 meses) y 15m (5 meses) reales, partición 70/30 train/test.
+
+## Con parámetros default: NINGUNO tiene ventaja
+
+  AlphaTrend, Pivot y DIY, cada uno por separado, con sus parámetros
+  default (at_mult=1.0, piv_atr_factor=3.0, diy_box_width=2.5) y
+  salida default (sl_buffer_atr=0.10, tp_r_mult=1.5): profit factor
+  por debajo de 1.0 en TREN y TEST en las 5 temporalidades (1m, 2m, 5m,
+  15m, 240m) para los 3 indicadores, sin excepción.
+
+## Barriendo parámetros propios de cada indicador (tp_r_mult 0.5-3.0,
+   sl_buffer_atr 0.05-0.30, cruzado con el parámetro propio de cada
+   indicador) en 5m y 15m:
+
+- **AlphaTrend, 15m, at_mult=2.0** (el doble del default 1.0, banda
+  más ancha): ÚNICO caso con ventaja consistente Y con muestra grande.
+  Profit factor ~1.0-1.1 tanto en train (250-340 operaciones) como en
+  test (110-150 operaciones), en un rango amplio de tp_r_mult/sl_buffer.
+  Subir más el at_mult (2.5, 3.0, 4.0) empeora el resultado -2.0 es un
+  óptimo local, no "más ancho es mejor". Es una ventaja MODESTA (PF
+  1.0-1.1, expectancy ~0.01-0.08R) pero la muestra es grande y estable
+  entre varias combinaciones vecinas de tp_r_mult/sl_buffer -no un pico
+  aislado de sobreajuste.
+
+- **Pivot (Pivot Point SuperTrend), 15m y 5m, piv_atr_factor=3-4,
+  piv_period=3** (banda más ancha que el default): profit factor más
+  alto (1.05-1.48) pero con muestra chica (40-50 operaciones train,
+  16-17 test) -tratar como indicio, no como conclusión, hasta conseguir
+  más historial.
+
+- **DIY**: no se encontró ninguna combinación de diy_swing_length/
+  diy_box_width con profit factor > 1 en AMBOS train y test. Mejor
+  resultado: min_pf ≈ 0.89 (5m, diy_swing_length=10, diy_box_width=1.5).
+  Con los datos actuales, DIY solo no muestra ventaja.
+
+## Aviso sobre confluencia real (2 o 3 indicadores a la vez)
+
+Con los parámetros default, AlphaTrend dispara ~10x más señales que
+Pivot (1370 vs 130 en 2 meses de 5m) y casi nunca coinciden en la misma
+vela (8 velas en común de ~1370) -el ancho de banda de Pivot Point
+SuperTrend es mucho mayor que el de AlphaTrend. `confluence_need=2`
+o `3` casi no generan operaciones (12-18 en 2 meses de 5m) con los
+defaults, y las pocas que generan no son consistentes train/test
+(pinta bien en test, mal en train -clásico signo de muestra chica, no
+de ventaja real). Para que la confluencia sea útil de verdad, hay que
+acercar los anchos de banda de los 3 indicadores entre sí.
+
+## Próximo paso sugerido
+
+Si se quiere seguir esta línea: correr `optimize.py` completo con
+`at_mult` centrado en 2.0 (no 1.0) y `confluence_need=1`, ya que es la
+única configuración con ventaja de muestra grande encontrada hasta
+ahora. Validar además en 1m/2m/240m antes de confiar en el resultado
+de 15m solo.
+
+Script: estrategias/mecha_fade/backtest/analyze_source_quality.py

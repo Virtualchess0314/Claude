@@ -102,6 +102,12 @@ class Params:
     # Confluencia: cuántos de los 3 indicadores deben coincidir (1..3)
     confluence_need: int = 1
 
+    # Aislar un solo indicador para comparar su calidad individual
+    # ('at'/'piv'/'diy'/None=los 3). Herramienta de análisis -no forma
+    # parte de la estrategia original, ignora confluence_need cuando
+    # está seteado.
+    only_source: str | None = None
+
     # Riesgo / salida
     atr_len: int = 14
     sl_buffer_atr: float = 0.10
@@ -413,11 +419,19 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
             long_diy = not np.isnan(demand_top[i]) and l[i] < demand_top[i] and c[i] > demand_top[i]
             short_diy = not np.isnan(supply_bottom[i]) and h[i] > supply_bottom[i] and c[i] < supply_bottom[i]
 
+            if p.only_source == "at":
+                long_piv = short_piv = long_diy = short_diy = False
+            elif p.only_source == "piv":
+                long_at = short_at = long_diy = short_diy = False
+            elif p.only_source == "diy":
+                long_at = short_at = long_piv = short_piv = False
+
             n_long = int(long_at) + int(long_piv) + int(long_diy)
             n_short = int(short_at) + int(short_piv) + int(short_diy)
 
-            long_go = can_trade and n_long >= p.confluence_need and n_short < p.confluence_need
-            short_go = can_trade and n_short >= p.confluence_need and n_long < p.confluence_need
+            need = 1 if p.only_source else p.confluence_need
+            long_go = can_trade and n_long >= need and n_short < need
+            short_go = can_trade and n_short >= need and n_long < need
 
             if long_go or short_go:
                 is_long = long_go

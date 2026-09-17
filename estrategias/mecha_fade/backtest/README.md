@@ -96,7 +96,29 @@ pip install -r requirements.txt
 python3 optimize.py tus_datos.csv
 python3 optimize.py tus_datos.csv --tp-r-mult 1.0,1.5,2.0 --confluence-need 1,2,3 --sl-buffer-atr 0.05,0.10,0.20
 python3 optimize.py tus_datos.csv --diy-swing-length 5,10,15 --diy-box-width 1.5,2.5,3.5
+
+# Calidad de cada indicador por separado (antes de gastar tiempo en
+# confluencias: si ninguno individual tiene ventaja, combinarlos
+# tampoco la va a crear).
+python3 analyze_source_quality.py tus_datos.csv
+python3 analyze_source_quality.py datos_5m.csv datos_15m.csv  # varios timeframes juntos
 ```
+
+`Params.only_source` (`'at'`/`'piv'`/`'diy'`/`None`) aísla un solo
+indicador para comparar su calidad individual, ignorando
+`confluence_need` — es una herramienta de análisis, no parte de la
+estrategia original.
+
+**Aviso importante sobre confluencia real**: con los parámetros
+default, AlphaTrend dispara señales muchísimo más seguido que Pivot
+(en MNQ 5m, ~1370 vs ~130 en 2 meses) y casi nunca coinciden en la
+misma vela (~8 velas en común) — el ancho de banda de Pivot Point
+SuperTrend (`piv_atr_factor`) es mucho mayor que el de AlphaTrend
+(`at_mult`). Esto hace que `confluence_need=2` o `3` casi no generen
+operaciones con los defaults. Si la idea es que los 3 indicadores
+confluyan de verdad, hay que acercar sus anchos de banda (subir
+`at_mult` y/o bajar `piv_atr_factor`) o aceptar que `confluence_need=1`
+es el único valor práctico por ahora.
 
 El CSV es el export de TradingView ("Export chart data") con al menos
 `time,open,high,low,close` — `volume` es opcional.
