@@ -111,7 +111,16 @@ python3 analyze_r_multiple_curve.py tus_datos.csv --sl-buffer-atr 0.05,0.10,0.20
 # tardío) o ruptura real (breakout)?
 python3 analyze_loss_postmortem.py tus_datos.csv
 python3 analyze_loss_postmortem.py tus_datos.csv --only-source at --at-mult 2.0 --sl-buffer-atr 1.0 --tp-r-mult 2.0
+
+# Desglose de resultado por sesión (Asia/Londres/Londres-NY/NY)
+python3 analyze_session_performance.py tus_datos.csv
+python3 analyze_session_performance.py tus_datos.csv --only-source at --at-mult 2.0 --sl-buffer-atr 1.0 --tp-r-mult 2.0
 ```
+
+`Params.entry_start_hour`/`entry_end_hour` (hora de NY, 0-24, admite
+ventanas que cruzan medianoche) restringe cuándo se permite ABRIR una
+operación nueva — no afecta salidas de posiciones ya abiertas. Expuesto
+como `--entry-start-hour`/`--entry-end-hour` en `optimize.py`.
 
 `Params.only_source` (`'at'`/`'piv'`/`'diy'`/`None`) aísla un solo
 indicador para comparar su calidad individual, ignorando
@@ -154,6 +163,14 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   `runs/2026-09-17_loss_postmortem.txt`). Reemplaza al hallazgo previo
   de `sl_buffer_atr=0.2-0.3` (PF~1.0-1.1) — el stop original era
   demasiado ajustado.
+- **Backtesting por sesión**: la sesión NY (12-17 ET) rinde
+  sistemáticamente mejor y el overlap Londres/NY (08-12 ET)
+  sistemáticamente peor, de acuerdo en las 5 temporalidades — patrón
+  robusto. Sobre la mejor configuración, excluir el overlap
+  (`--entry-start-hour 12 --entry-end-hour 8`) mejora el profit factor
+  de forma modesta (1.45→1.49) sin sacrificar mucha muestra. Restringir
+  sólo a NY da un PF vistoso (1.75) pero con apenas 25 operaciones —
+  no confiar todavía. Ver `runs/2026-09-17_session_performance.txt`.
 - El filtro de frescura (`fresh_only`) empeora esa configuración en
   test de forma sistemática — no usar por ahora (ver
   `runs/2026-09-17_fresh_only_filter.txt`).

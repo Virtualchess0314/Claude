@@ -130,6 +130,15 @@ class Params:
     session_close_minute: int = 45
     max_trades_per_day: int = 999  # 999 = sin límite práctico
 
+    # Filtro de ventana horaria de ENTRADA (hora de NY, 0-24). None =
+    # sin filtro. No afecta salidas de posiciones ya abiertas, sólo si
+    # se permite ABRIR una nueva. Motivado por
+    # runs/2026-09-17_session_performance.txt: la sesión NY (12-17 ET)
+    # rinde sistemáticamente mejor que el resto en las 5 temporalidades
+    # probadas, y el overlap Londres/NY (08-12 ET) sistemáticamente peor.
+    entry_start_hour: float | None = None
+    entry_end_hour: float | None = None
+
     # Costos reales
     commission_round_turn_usd: float = 3.50  # confirmado Tradovate/Tradeify
     slippage_ticks: float = 1.0
@@ -455,7 +464,15 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
 
         # ── señales de entrada (sólo si está flat) ──────────────────────
         if not open_pos:
-            can_trade = dtrades < p.max_trades_per_day and in_sess and not np.isnan(atr_risk[i])
+            in_entry_window = True
+            if p.entry_start_hour is not None and p.entry_end_hour is not None:
+                hour_frac = local.hour + local.minute / 60.0
+                if p.entry_start_hour <= p.entry_end_hour:
+                    in_entry_window = p.entry_start_hour <= hour_frac < p.entry_end_hour
+                else:  # ventana que cruza medianoche (ej. sesión Asia 18-03)
+                    in_entry_window = hour_frac >= p.entry_start_hour or hour_frac < p.entry_end_hour
+
+            can_trade = dtrades < p.max_trades_per_day and in_sess and in_entry_window and not np.isnan(atr_risk[i])
 
             long_at = not np.isnan(alpha[i]) and c[i] > alpha[i] and l[i] < alpha[i]
             short_at = not np.isnan(alpha[i]) and c[i] < alpha[i] and h[i] > alpha[i]
