@@ -38,14 +38,14 @@ GRIDS = {
 
 
 def sweep_source(df_train: pd.DataFrame, df_test: pd.DataFrame, src: str, tf: str,
-                  min_train: int, min_test: int) -> list[dict]:
+                  min_train: int, min_test: int, fresh_only: bool = False) -> list[dict]:
     grid = GRIDS[src]
     keys = list(grid.keys())
     rows = []
     for combo in itertools.product(*grid.values(), TP_R_MULTS, SL_BUFFERS):
         kwargs = dict(zip(keys, combo[: len(keys)]))
         tp_r_mult, sl_buffer_atr = combo[len(keys):]
-        p = Params(only_source=src, tp_r_mult=tp_r_mult, sl_buffer_atr=sl_buffer_atr, **kwargs)
+        p = Params(only_source=src, tp_r_mult=tp_r_mult, sl_buffer_atr=sl_buffer_atr, fresh_only=fresh_only, **kwargs)
         _, s_train = simulate(df_train, p)
         _, s_test = simulate(df_test, p)
         if s_train["trades"] < min_train or s_test["trades"] < min_test:
@@ -66,6 +66,8 @@ def main():
     ap.add_argument("--min-test-trades", type=int, default=10)
     ap.add_argument("--out", default="source_quality_sweep.csv")
     ap.add_argument("--top", type=int, default=25)
+    ap.add_argument("--fresh-only", action="store_true",
+                     help="Filtro de frescura: sólo cuenta la primera mecha que testea cada nivel/zona desde que nació")
     args = ap.parse_args()
 
     all_rows = []
@@ -75,7 +77,8 @@ def main():
         df_train, df_test = df.iloc[:split], df.iloc[split:]
         tf = path.split("/")[-1]
         for src in GRIDS:
-            all_rows += sweep_source(df_train, df_test, src, tf, args.min_train_trades, args.min_test_trades)
+            all_rows += sweep_source(df_train, df_test, src, tf, args.min_train_trades, args.min_test_trades,
+                                      fresh_only=args.fresh_only)
         print(f"{tf} listo, {len(all_rows)} filas acumuladas", file=sys.stderr)
 
     rdf = pd.DataFrame(all_rows)

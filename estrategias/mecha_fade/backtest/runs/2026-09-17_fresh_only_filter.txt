@@ -1,0 +1,46 @@
+Filtro de frescura (Params.fresh_only): sólo cuenta la PRIMERA mecha
+que testea cada nivel/zona desde que "nació" -para AlphaTrend/Pivot,
+desde el último flip de régimen; para DIY, desde que se formó la zona
+vigente (usa IDs de zona agregados a supply_demand_zones()).
+Repeticiones contra el mismo nivel/zona dentro de la misma vida se
+ignoran.
+
+Implementado y funcional (reduce ~35-40% las operaciones al eliminar
+repeticiones, como se espera). PERO: probado sobre la ÚNICA
+configuración con ventaja real conocida hasta ahora (AlphaTrend solo,
+15m, at_mult=2.0 -ver runs/2026-09-17_source_quality.txt), el filtro
+de frescura es CONTRAPRODUCENTE de forma muy consistente:
+
+  Barrido de 20 combinaciones (tp_r_mult 1.0-3.0, sl_buffer_atr
+  0.05-0.30) con at_mult=2.0 en 15m, train/test 70/30:
+
+    train_pf promedio:  0.96 (sin frescura) -> 1.08 (con frescura)  [MEJORA]
+    test_pf promedio:   0.94 (sin frescura) -> 0.73 (con frescura)  [EMPEORA]
+
+  El patrón se repite en CASI TODAS las 20 combinaciones individuales,
+  no es un promedio engañado por un outlier: sube en train, baja en
+  test, sistemáticamente. Es la firma clásica de sobreajuste -el filtro
+  está ajustándose a un patrón específico del tramo de train (primer
+  70% de los datos) que no se repite en el tramo de test (último 30%).
+
+  Ejemplo puntual (tp_r_mult=2.0, sl_buffer_atr=0.30):
+    sin frescura: train PF=1.06 (n=256) | test PF=1.10 (n=115)
+    con frescura: train PF=1.09 (n=152) | test PF=0.61 (n=70)  <- se rompe
+
+Con configuraciones SIN tunear (parámetros default de cada indicador),
+el resultado es más mixto/ruidoso -a veces mejora ambos lados
+levemente, a veces empeora ambos, sin un patrón claro- pero tampoco
+aparece ninguna mejora consistente que justifique adoptarlo.
+
+## Conclusión
+
+NO se recomienda adoptar el filtro de frescura tal como está definido
+acá, al menos no sobre estos datos. Se deja implementado y disponible
+(`--fresh-only` en optimize.py, analyze_source_quality.py y
+analyze_r_multiple_curve.py; `Params.fresh_only`) por si en el futuro
+aparecen más datos o un contexto donde sí ayude, pero la evidencia
+actual apunta a que empeora la única ventaja real encontrada hasta
+ahora en vez de mejorarla.
+
+Scripts: estrategias/mecha_fade/backtest/engine.py (Params.fresh_only,
+         supply_demand_zones con IDs de zona)

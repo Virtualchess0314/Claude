@@ -102,12 +102,26 @@ python3 optimize.py tus_datos.csv --diy-swing-length 5,10,15 --diy-box-width 1.5
 # tampoco la va a crear).
 python3 analyze_source_quality.py tus_datos.csv
 python3 analyze_source_quality.py datos_5m.csv datos_15m.csv  # varios timeframes juntos
+
+# Curva de winrate/profit factor por múltiplo de R (1:1 a 1:10)
+python3 analyze_r_multiple_curve.py tus_datos.csv
+python3 analyze_r_multiple_curve.py tus_datos.csv --sl-buffer-atr 0.05,0.10,0.20 --fresh-only
 ```
 
 `Params.only_source` (`'at'`/`'piv'`/`'diy'`/`None`) aísla un solo
 indicador para comparar su calidad individual, ignorando
 `confluence_need` — es una herramienta de análisis, no parte de la
 estrategia original.
+
+`Params.fresh_only` (`--fresh-only` en los scripts de arriba): filtro
+de frescura — sólo cuenta la primera mecha que testea cada nivel/zona
+desde que nació (último flip de régimen para AlphaTrend/Pivot, nueva
+zona para DIY); repeticiones contra el mismo nivel se ignoran.
+**Probado sobre datos reales y NO recomendado como default** — mejora
+el resultado en train pero lo empeora consistentemente en test sobre
+la única configuración con ventaja real conocida (ver
+`runs/2026-09-17_fresh_only_filter.txt`). Queda disponible para seguir
+explorando.
 
 **Aviso importante sobre confluencia real**: con los parámetros
 default, AlphaTrend dispara señales muchísimo más seguido que Pivot
@@ -122,6 +136,24 @@ es el único valor práctico por ahora.
 
 El CSV es el export de TradingView ("Export chart data") con al menos
 `time,open,high,low,close` — `volume` es opcional.
+
+## Hallazgos hasta ahora (sobre datos reales de MNQ)
+
+- Con parámetros default, **ningún indicador individual ni la
+  confluencia cruda tienen ventaja** en ninguna de las 5 temporalidades
+  probadas (1m/2m/5m/15m/240m) — ver `runs/2026-09-17_source_quality.txt`
+  y `runs/2026-09-17_r_multiple_curve.txt`.
+- La única configuración con ventaja real y muestra grande encontrada
+  hasta ahora: **AlphaTrend solo, 15m, `at_mult=2.0`** (el doble del
+  default) — profit factor ~1.0-1.1 en train y test.
+- El filtro de frescura (`fresh_only`) empeora esa configuración en
+  test de forma sistemática — no usar por ahora (ver
+  `runs/2026-09-17_fresh_only_filter.txt`).
+- La hipótesis "un flip de AlphaTrend mata al Pivot Point SuperTrend
+  vigente" se sostiene con fuerza (67-85% según filtro de ruido) y de
+  forma muy consistente entre timeframes — ver
+  `runs/2026-09-17_alphatrend_kills_pivot.txt`. Todavía no se probó
+  como filtro real de la estrategia.
 
 ## Qué mirar en el resultado
 

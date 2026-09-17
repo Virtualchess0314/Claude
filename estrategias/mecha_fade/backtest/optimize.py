@@ -61,6 +61,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--slippage-ticks", type=float, default=1.0)
     ap.add_argument("--tick-size", type=float, default=0.25)
     ap.add_argument("--no-session-close", action="store_true", help="No forzar cierre de sesión (útil para FX/cripto 24h)")
+    ap.add_argument("--fresh-only", action="store_true",
+                     help="Filtro de frescura: sólo cuenta la primera mecha que testea cada nivel/zona desde que nació")
     return ap
 
 
@@ -86,6 +88,7 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
             commission_round_turn_usd=args.commission_round_turn_usd,
             slippage_ticks=args.slippage_ticks, tick_size=args.tick_size,
             use_session=not args.no_session_close,
+            fresh_only=args.fresh_only,
         )
         _, s_train = simulate(df_train, p)
         _, s_test = simulate(df_test, p)

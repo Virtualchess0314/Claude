@@ -37,6 +37,8 @@ def main():
     ap.add_argument("--r-mults", type=parse_float_list, default=DEFAULT_R_MULTS)
     ap.add_argument("--sl-buffer-atr", type=parse_float_list, default=[0.10])
     ap.add_argument("--confluence-need", type=int, default=1)
+    ap.add_argument("--fresh-only", action="store_true",
+                     help="Filtro de frescura: sólo cuenta la primera mecha que testea cada nivel/zona desde que nació")
     ap.add_argument("--out", default="r_multiple_curve.csv")
     args = ap.parse_args()
 
@@ -46,7 +48,8 @@ def main():
     rows = []
     for sl_buffer_atr in args.sl_buffer_atr:
         for r in args.r_mults:
-            p = Params(tp_r_mult=r, sl_buffer_atr=sl_buffer_atr, confluence_need=args.confluence_need)
+            p = Params(tp_r_mult=r, sl_buffer_atr=sl_buffer_atr, confluence_need=args.confluence_need,
+                       fresh_only=args.fresh_only)
             _, s = simulate(df, p)
             rows.append({
                 "sl_buffer_atr": sl_buffer_atr, "r_mult": r,

@@ -108,6 +108,14 @@ class Params:
     # está seteado.
     only_source: str | None = None
 
+    # Filtro de frescura: sólo cuenta la PRIMERA mecha que testea cada
+    # nivel/zona desde que "nació" -para AlphaTrend/Pivot, desde el
+    # último flip de régimen (cambio de lado del precio); para DIY,
+    # desde que se formó la zona vigente. Repeticiones contra el mismo
+    # nivel/zona dentro de la misma vida se ignoran (ya "gastó" su
+    # liquidez). Default off (comportamiento original).
+    fresh_only: bool = False
+
     # Riesgo / salida
     atr_len: int = 14
     sl_buffer_atr: float = 0.10
@@ -282,15 +290,19 @@ def pivot_point_supertrend(df: pd.DataFrame, p: Params) -> tuple[np.ndarray, np.
 
 def supply_demand_zones(
     high: np.ndarray, low: np.ndarray, close: np.ndarray, atrpoi: np.ndarray, p: Params
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Zona de oferta/demanda del indicador "DIY [ZP]" (única parte de ese
     script que el usuario confirmó usar). Ver simplificación de "sólo la
     zona más reciente por lado" en el docstring del módulo.
 
-    Devuelve (demand_top, demand_bottom, supply_top, supply_bottom), cada
-    uno un array alineado a las velas con NaN cuando no hay zona activa
-    de ese lado.
+    Devuelve (demand_top, demand_bottom, supply_top, supply_bottom,
+    demand_id, supply_id). Los primeros 4 son arrays alineados a las
+    velas con NaN cuando no hay zona activa de ese lado. `demand_id`/
+    `supply_id` son enteros que identifican a CADA zona (se incrementan
+    al nacer una nueva, 0 cuando no hay zona activa) -sirven para que
+    `simulate()` detecte si una zona ya fue testeada antes (filtro de
+    frescura, `Params.fresh_only`).
     """
     piv_h, piv_l = pivots(high, low, p.diy_swing_length, p.diy_swing_length)
     n = len(high)
@@ -298,9 +310,13 @@ def supply_demand_zones(
     demand_bottom = np.full(n, np.nan)
     supply_top = np.full(n, np.nan)
     supply_bottom = np.full(n, np.nan)
+    demand_id = np.zeros(n, dtype=int)
+    supply_id = np.zeros(n, dtype=int)
 
-    cur_demand = None  # (bottom, top, poi)
-    cur_supply = None  # (bottom, top, poi)
+    cur_demand = None  # (bottom, top, poi, id)
+    cur_supply = None  # (bottom, top, poi, id)
+    next_demand_id = 0
+    next_supply_id = 0
 
     for i in range(n):
         atr_i = atrpoi[i]
@@ -309,13 +325,15 @@ def supply_demand_zones(
             new_top, new_bottom = piv_h[i], piv_h[i] - buf
             new_poi = (new_top + new_bottom) / 2.0
             if cur_supply is None or abs(new_poi - cur_supply[2]) > atr_i * p.diy_overlap_atr_mult:
-                cur_supply = (new_bottom, new_top, new_poi)
+                next_supply_id += 1
+                cur_supply = (new_bottom, new_top, new_poi, next_supply_id)
         if not np.isnan(piv_l[i]) and not np.isnan(atr_i):
             buf = atr_i * (p.diy_box_width / 10.0)
             new_bottom, new_top = piv_l[i], piv_l[i] + buf
             new_poi = (new_top + new_bottom) / 2.0
             if cur_demand is None or abs(new_poi - cur_demand[2]) > atr_i * p.diy_overlap_atr_mult:
-                cur_demand = (new_bottom, new_top, new_poi)
+                next_demand_id += 1
+                cur_demand = (new_bottom, new_top, new_poi, next_demand_id)
 
         if cur_supply is not None and close[i] >= cur_supply[1]:
             cur_supply = None
@@ -324,10 +342,12 @@ def supply_demand_zones(
 
         if cur_supply is not None:
             supply_bottom[i], supply_top[i] = cur_supply[0], cur_supply[1]
+            supply_id[i] = cur_supply[3]
         if cur_demand is not None:
             demand_bottom[i], demand_top[i] = cur_demand[0], cur_demand[1]
+            demand_id[i] = cur_demand[3]
 
-    return demand_top, demand_bottom, supply_top, supply_bottom
+    return demand_top, demand_bottom, supply_top, supply_bottom, demand_id, supply_id
 
 
 def _within_session(ct_min: int, p: Params) -> tuple[bool, bool]:
@@ -347,7 +367,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     piv_line, _piv_trend = pivot_point_supertrend(df, p)
 
     atrpoi = wilder_atr(df["high"], df["low"], df["close"], p.diy_atr_len)
-    demand_top, demand_bottom, supply_top, supply_bottom = supply_demand_zones(h, l, c, atrpoi, p)
+    demand_top, demand_bottom, supply_top, supply_bottom, demand_id, supply_id = supply_demand_zones(h, l, c, atrpoi, p)
 
     atr_risk = wilder_atr(df["high"], df["low"], df["close"], p.atr_len)
 
@@ -362,6 +382,14 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     sl = tp = np.nan
     qty = 0
 
+    # ── Estado del filtro de frescura (Params.fresh_only) ────────────
+    at_side_prev = None
+    at_tested_side = None
+    piv_side_prev = None
+    piv_tested_side = None
+    supply_tested_id = 0
+    demand_tested_id = 0
+
     trades = []
 
     for i in range(n):
@@ -372,6 +400,20 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
             dtrades = 0
             last_day = day_id
         in_sess, is_eod = _within_session(ct_min, p)
+
+        # ── frescura: detectar flip de régimen SIEMPRE (incluso con
+        #    posición abierta), para que el filtro no quede desalineado
+        #    si el flip ocurrió mientras estábamos en una operación ──
+        if p.fresh_only:
+            at_side = None if np.isnan(alpha[i]) else (1 if c[i] > alpha[i] else -1)
+            if at_side != at_side_prev:
+                at_tested_side = None
+            at_side_prev = at_side
+
+            piv_side = None if np.isnan(piv_line[i]) else (1 if c[i] > piv_line[i] else -1)
+            if piv_side != piv_side_prev:
+                piv_tested_side = None
+            piv_side_prev = piv_side
 
         # ── posición abierta: chequear SL/TP (SL primero si empatan) ────
         if open_pos:
@@ -418,6 +460,26 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
 
             long_diy = not np.isnan(demand_top[i]) and l[i] < demand_top[i] and c[i] > demand_top[i]
             short_diy = not np.isnan(supply_bottom[i]) and h[i] > supply_bottom[i] and c[i] < supply_bottom[i]
+
+            if p.fresh_only:
+                if long_at or short_at:
+                    if at_tested_side == at_side:
+                        long_at = short_at = False
+                    else:
+                        at_tested_side = at_side
+                if long_piv or short_piv:
+                    if piv_tested_side == piv_side:
+                        long_piv = short_piv = False
+                    else:
+                        piv_tested_side = piv_side
+                if short_diy and supply_tested_id == supply_id[i]:
+                    short_diy = False
+                elif short_diy:
+                    supply_tested_id = supply_id[i]
+                if long_diy and demand_tested_id == demand_id[i]:
+                    long_diy = False
+                elif long_diy:
+                    demand_tested_id = demand_id[i]
 
             if p.only_source == "at":
                 long_piv = short_piv = long_diy = short_diy = False

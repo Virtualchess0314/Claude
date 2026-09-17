@@ -67,6 +67,8 @@ diy_overlap_mult = input.float(2.0, "No reemplazar zona si el nuevo swing cae a 
 // ── Inputs: Confluencia ───────────────────────────────────────────
 grpConf = "Confluencia"
 confluence_need = input.int(1, "Mínimo de indicadores que deben coincidir (1=cualquiera, 3=los 3)", minval=1, maxval=3, group=grpConf)
+fresh_only = input.bool(false, "Filtro de frescura (sólo 1ra mecha por nivel/zona)", group=grpConf,
+     tooltip="Sólo cuenta la PRIMERA mecha que testea cada nivel/zona desde que nació (último flip de régimen para AlphaTrend/Pivot, nueva zona para DIY). Probado sobre datos reales: no mejoró el resultado (ver runs/2026-09-17_fresh_only_filter.txt) -disponible para seguir explorando, no recomendado como default.")
 
 // ── Inputs: Riesgo / salida ───────────────────────────────────────
 grpRisk = "Riesgo"
@@ -124,6 +126,10 @@ var float supPoi = na
 var float demTop = na
 var float demBot = na
 var float demPoi = na
+var int supId = 0
+var int demId = 0
+var int nextSupId = 0
+var int nextDemId = 0
 
 if not na(diy_ph)
     buf = atrpoi * (diy_box_width / 10)
@@ -134,6 +140,8 @@ if not na(diy_ph)
         supTop := newTop
         supBot := newBot
         supPoi := newPoi
+        nextSupId += 1
+        supId := nextSupId
 
 if not na(diy_pl)
     buf = atrpoi * (diy_box_width / 10)
@@ -144,32 +152,79 @@ if not na(diy_pl)
         demTop := newTop
         demBot := newBot
         demPoi := newPoi
+        nextDemId += 1
+        demId := nextDemId
 
 // Ruptura (BOS): el cierre cruza el borde de la zona -> se desactiva
 if not na(supTop) and close >= supTop
     supTop := na
     supBot := na
     supPoi := na
+    supId := 0
 if not na(demBot) and close <= demBot
     demTop := na
     demBot := na
     demPoi := na
+    demId := 0
 
 // ── Señales de "mecha por fuera, cierre adentro" (fade) ────────────
 // AlphaTrend: línea única que actúa como soporte (precio arriba) o
 // resistencia (precio abajo) según el régimen -se chequean ambos lados.
-long_at  = not na(alphaTrend) and close > alphaTrend and low < alphaTrend
+long_at = not na(alphaTrend) and close > alphaTrend and low < alphaTrend
 short_at = not na(alphaTrend) and close < alphaTrend and high > alphaTrend
 
 // Pivot: línea única (Pivot Point SuperTrend) que actúa como soporte o
 // resistencia según el trend -mismo criterio que AlphaTrend.
-long_piv  = not na(pivotLine) and close > pivotLine and low < pivotLine
+long_piv = not na(pivotLine) and close > pivotLine and low < pivotLine
 short_piv = not na(pivotLine) and close < pivotLine and high > pivotLine
 
 // DIY: soporte = borde superior de la zona demanda, resistencia = borde
 // inferior de la zona oferta (el borde más cercano al precio).
-long_diy  = not na(demTop) and low < demTop and close > demTop
+long_diy = not na(demTop) and low < demTop and close > demTop
 short_diy = not na(supBot) and high > supBot and close < supBot
+
+// ── Filtro de frescura (ver nota en el input) ──────────────────────
+// Sólo cuenta la primera mecha que testea cada nivel/zona desde que
+// nació: último flip de régimen para AlphaTrend/Pivot, nueva zona
+// (supId/demId) para DIY.
+atSide = na(alphaTrend) ? na : close > alphaTrend ? 1 : -1
+var float atSidePrev = na
+var float atTestedSide = na
+if atSide != atSidePrev
+    atTestedSide := na
+atSidePrev := atSide
+
+pivSide = na(pivotLine) ? na : close > pivotLine ? 1 : -1
+var float pivSidePrev = na
+var float pivTestedSide = na
+if pivSide != pivSidePrev
+    pivTestedSide := na
+pivSidePrev := pivSide
+
+var int supTestedId = 0
+var int demTestedId = 0
+
+if fresh_only
+    if long_at or short_at
+        if atTestedSide == atSide
+            long_at := false
+            short_at := false
+        else
+            atTestedSide := atSide
+    if long_piv or short_piv
+        if pivTestedSide == pivSide
+            long_piv := false
+            short_piv := false
+        else
+            pivTestedSide := pivSide
+    if short_diy and supTestedId == supId
+        short_diy := false
+    else if short_diy
+        supTestedId := supId
+    if long_diy and demTestedId == demId
+        long_diy := false
+    else if long_diy
+        demTestedId := demId
 
 n_long  = (long_at ? 1 : 0) + (long_piv ? 1 : 0) + (long_diy ? 1 : 0)
 n_short = (short_at ? 1 : 0) + (short_piv ? 1 : 0) + (short_diy ? 1 : 0)
