@@ -106,6 +106,11 @@ python3 analyze_source_quality.py datos_5m.csv datos_15m.csv  # varios timeframe
 # Curva de winrate/profit factor por múltiplo de R (1:1 a 1:10)
 python3 analyze_r_multiple_curve.py tus_datos.csv
 python3 analyze_r_multiple_curve.py tus_datos.csv --sl-buffer-atr 0.05,0.10,0.20 --fresh-only
+
+# Post-mortem de operaciones perdedoras: ¿stop muy ajustado (barrido
+# tardío) o ruptura real (breakout)?
+python3 analyze_loss_postmortem.py tus_datos.csv
+python3 analyze_loss_postmortem.py tus_datos.csv --only-source at --at-mult 2.0 --sl-buffer-atr 1.0 --tp-r-mult 2.0
 ```
 
 `Params.only_source` (`'at'`/`'piv'`/`'diy'`/`None`) aísla un solo
@@ -143,12 +148,24 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   confluencia cruda tienen ventaja** en ninguna de las 5 temporalidades
   probadas (1m/2m/5m/15m/240m) — ver `runs/2026-09-17_source_quality.txt`
   y `runs/2026-09-17_r_multiple_curve.txt`.
-- La única configuración con ventaja real y muestra grande encontrada
-  hasta ahora: **AlphaTrend solo, 15m, `at_mult=2.0`** (el doble del
-  default) — profit factor ~1.0-1.1 en train y test.
+- **Mejor configuración encontrada hasta ahora: AlphaTrend solo, 15m,
+  `at_mult=2.0`, `sl_buffer_atr≈1.0`, `tp_r_mult≈2.0-2.5`** — profit
+  factor 1.3-1.6 en train y test de forma consistente (ver
+  `runs/2026-09-17_loss_postmortem.txt`). Reemplaza al hallazgo previo
+  de `sl_buffer_atr=0.2-0.3` (PF~1.0-1.1) — el stop original era
+  demasiado ajustado.
 - El filtro de frescura (`fresh_only`) empeora esa configuración en
   test de forma sistemática — no usar por ahora (ver
   `runs/2026-09-17_fresh_only_filter.txt`).
+- **Post-mortem de operaciones perdedoras**: entre el 49% y el 78% de
+  las pérdidas (según timeframe) son por stop demasiado ajustado — el
+  precio SÍ termina yendo hacia donde apuntaba el fade original, sólo
+  que después de que el stop ya nos había sacado. El resto (22-39%) son
+  rupturas reales (85-95% coinciden con un flip de régimen confirmado
+  del indicador). Ver `runs/2026-09-17_loss_postmortem.txt` — de ahí
+  sale el hallazgo de ensanchar `sl_buffer_atr` de arriba. Ojo: ese
+  ensanche ayuda mucho en la configuración ya afinada (AlphaTrend solo)
+  pero NO de forma clara en la señal cruda sin tunear.
 - La hipótesis "un flip de AlphaTrend mata al Pivot Point SuperTrend
   vigente" se sostiene con fuerza (67-85% según filtro de ruido) y de
   forma muy consistente entre timeframes — ver

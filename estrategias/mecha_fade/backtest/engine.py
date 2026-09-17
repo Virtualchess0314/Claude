@@ -381,6 +381,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     entry_price = entry_bar = None
     sl = tp = np.nan
     qty = 0
+    entry_sources = ""
 
     # ── Estado del filtro de frescura (Params.fresh_only) ────────────
     at_side_prev = None
@@ -437,14 +438,18 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 trades.append({
                     "entry_time": ts[entry_bar],
                     "exit_time": ts[i],
+                    "entry_bar": entry_bar,
+                    "exit_bar": i,
                     "direction": "long" if is_long else "short",
                     "entry": entry_price,
                     "exit": exit_price,
+                    "sl": sl,
                     "reason": exit_reason,
                     "qty": qty,
                     "pnl_usd": pnl,
                     "r_multiple": pnl / (risk_pts * qty * p.point_value_usd) if risk_pts and risk_pts > 0 else np.nan,
                     "bars_held": i - entry_bar,
+                    "sources": entry_sources,
                 })
                 open_pos = False
 
@@ -500,6 +505,10 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 entry_signal_price = c[i]
                 entry_price = entry_signal_price + slip if is_long else entry_signal_price - slip
                 entry_bar = i
+                fired = ["at", "piv", "diy"]
+                entry_sources = ",".join(
+                    src for src, on in zip(fired, [long_at or short_at, long_piv or short_piv, long_diy or short_diy]) if on
+                )
                 if is_long:
                     sl = l[i] - atr_risk[i] * p.sl_buffer_atr
                     risk_pts = entry_price - sl
