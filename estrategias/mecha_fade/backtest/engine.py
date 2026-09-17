@@ -132,6 +132,17 @@ class Params:
     point_value_usd: float = 2.0
     max_qty: int = 40
 
+    # Salida por TRAILING en vez de TP fijo ('at'/'piv'/None). Motivado
+    # por el ejemplo del usuario: SL chico en la entrada, pero en vez de
+    # cerrar en un múltiplo de R fijo, se queda montado mientras el
+    # indicador elegido siga actuando de soporte (long) o resistencia
+    # (short) -se sale recién cuando el precio cierra del otro lado
+    # (mismo criterio de "flip de régimen" que en
+    # analyze_alphatrend_kills_pivot.py). El SL original se mantiene
+    # como piso de seguridad (nunca se relaja, sólo el TP se reemplaza).
+    # tp_r_mult se ignora por completo si esto está seteado.
+    trailing_exit_source: str | None = None
+
     # Sesión / control diario
     use_session: bool = True
     session_close_hour: int = 16
@@ -433,14 +444,26 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                 piv_tested_side = None
             piv_side_prev = piv_side
 
-        # ── posición abierta: chequear SL/TP (SL primero si empatan) ────
+        # ── posición abierta: chequear SL/TRAIL/TP (SL primero si empatan) ─
         if open_pos:
             hit_sl = (l[i] <= sl) if is_long else (h[i] >= sl)
-            hit_tp = (h[i] >= tp) if is_long else (l[i] <= tp)
+
+            hit_trail = False
+            hit_tp = False
+            if p.trailing_exit_source is not None:
+                trail_line = alpha[i] if p.trailing_exit_source == "at" else piv_line[i]
+                if not np.isnan(trail_line):
+                    hit_trail = (c[i] < trail_line) if is_long else (c[i] > trail_line)
+            else:
+                hit_tp = (h[i] >= tp) if is_long else (l[i] <= tp)
+
             exit_price = exit_reason = None
             if hit_sl:
                 exit_price = sl - slip if is_long else sl + slip
                 exit_reason = "SL"
+            elif hit_trail:
+                exit_price = c[i] - slip if is_long else c[i] + slip  # a mercado, cierre que flipea el trailing
+                exit_reason = "TRAIL"
             elif hit_tp:
                 exit_price = tp  # orden límite, sin slippage
                 exit_reason = "TP"

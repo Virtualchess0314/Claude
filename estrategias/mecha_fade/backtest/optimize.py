@@ -64,6 +64,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--entry-start-hour", type=float, default=None, help="Ventana de entrada: hora de inicio (NY, 0-24)")
     ap.add_argument("--entry-end-hour", type=float, default=None, help="Ventana de entrada: hora de fin (NY, 0-24)")
     ap.add_argument("--only-direction", choices=["long", "short"], default=None)
+    ap.add_argument("--trailing-exit-source", choices=["at", "piv"], default=None,
+                     help="Salida por trailing en vez de TP fijo (ignora --tp-r-mult)")
     ap.add_argument("--fresh-only", action="store_true",
                      help="Filtro de frescura: sólo cuenta la primera mecha que testea cada nivel/zona desde que nació")
     return ap
@@ -93,6 +95,7 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
             use_session=not args.no_session_close,
             entry_start_hour=args.entry_start_hour, entry_end_hour=args.entry_end_hour,
             fresh_only=args.fresh_only, only_direction=args.only_direction,
+            trailing_exit_source=args.trailing_exit_source,
         )
         _, s_train = simulate(df_train, p)
         _, s_test = simulate(df_test, p)

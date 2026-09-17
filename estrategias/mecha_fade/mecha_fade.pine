@@ -74,7 +74,9 @@ fresh_only = input.bool(false, "Filtro de frescura (sólo 1ra mecha por nivel/zo
 grpRisk = "Riesgo"
 atr_len       = input.int(14, "ATR Length (riesgo)", group=grpRisk)
 sl_buffer_atr = input.float(0.10, "Buffer SL más allá de la mecha (x ATR)", group=grpRisk)
-tp_r_mult     = input.float(1.5, "Take Profit (múltiplo de R)", group=grpRisk)
+exitMode      = input.string("TP fijo", "Modo de salida", options=["TP fijo", "Trailing AlphaTrend", "Trailing Pivot"], group=grpRisk,
+     tooltip="TP fijo: cierra a un múltiplo de R. Trailing: en vez de TP fijo, se queda montado mientras el indicador elegido siga actuando de soporte/resistencia y sale recién cuando el precio cierra del otro lado -probado sobre datos reales: Trailing Pivot casi duplicó la expectativa de TP fijo en 15m (ver runs/2026-09-17_trailing_exit.txt). El SL siempre se mantiene como piso de seguridad.")
+tp_r_mult     = input.float(1.5, "Take Profit (múltiplo de R, sólo si Modo=TP fijo)", group=grpRisk)
 max_risk_usd  = input.float(150.0, "Riesgo máximo por operación (USD)", group=grpRisk)
 point_value   = input.float(2.0, "Valor por punto (USD) - MNQ=2", group=grpRisk)
 max_qty       = input.int(40, "Contratos máximos", group=grpRisk)
@@ -253,10 +255,13 @@ var float e_sl = na
 var float e_tp = na
 atr_risk = ta.atr(atr_len)
 
+useTrailing = exitMode != "TP fijo"
+trailLine = exitMode == "Trailing AlphaTrend" ? alphaTrend : exitMode == "Trailing Pivot" ? pivotLine : na
+
 if long_go
     e_sl := low - atr_risk * sl_buffer_atr
     risk_pts = close - e_sl
-    e_tp := close + risk_pts * tp_r_mult
+    e_tp := useTrailing ? na : close + risk_pts * tp_r_mult
     qty = risk_pts > 0 ? int(math.min(max_qty, math.floor(max_risk_usd / (risk_pts * point_value)))) : 0
     if qty > 0
         strategy.entry("L", strategy.long, qty=qty)
@@ -266,12 +271,22 @@ if long_go
 if short_go
     e_sl := high + atr_risk * sl_buffer_atr
     risk_pts = e_sl - close
-    e_tp := close - risk_pts * tp_r_mult
+    e_tp := useTrailing ? na : close - risk_pts * tp_r_mult
     qty = risk_pts > 0 ? int(math.min(max_qty, math.floor(max_risk_usd / (risk_pts * point_value)))) : 0
     if qty > 0
         strategy.entry("S", strategy.short, qty=qty)
         strategy.exit("XS", "S", stop=e_sl, limit=e_tp)
         dtrades += 1
+
+// Salida por trailing: el SL de arriba se mantiene como piso de
+// seguridad, esto sólo reemplaza el TP fijo -sale cuando el precio
+// cierra del otro lado del indicador elegido (mismo criterio de "flip
+// de régimen" que se usa para detectar señales).
+if useTrailing and not na(trailLine)
+    if strategy.position_size > 0 and close < trailLine
+        strategy.close("L", comment="TRAIL")
+    if strategy.position_size < 0 and close > trailLine
+        strategy.close("S", comment="TRAIL")
 
 if is_eod and strategy.position_size != 0
     strategy.close_all(comment="EOD")

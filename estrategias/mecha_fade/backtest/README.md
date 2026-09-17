@@ -115,6 +115,9 @@ python3 analyze_loss_postmortem.py tus_datos.csv --only-source at --at-mult 2.0 
 # Desglose de resultado por sesión (Asia/Londres/Londres-NY/NY)
 python3 analyze_session_performance.py tus_datos.csv
 python3 analyze_session_performance.py tus_datos.csv --only-source at --at-mult 2.0 --sl-buffer-atr 1.0 --tp-r-mult 2.0
+
+# Salida por trailing en vez de TP fijo
+python3 optimize.py tus_datos.csv --trailing-exit-source piv
 ```
 
 `Params.entry_start_hour`/`entry_end_hour` (hora de NY, 0-24, admite
@@ -163,6 +166,14 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   `runs/2026-09-17_loss_postmortem.txt`). Reemplaza al hallazgo previo
   de `sl_buffer_atr=0.2-0.3` (PF~1.0-1.1) — el stop original era
   demasiado ajustado.
+- **Mejora adicional: salida por trailing de Pivot en vez de TP fijo**
+  (`trailing_exit_source='piv'`) — sobre la misma configuración, casi
+  duplica la expectativa (PF 1.87, exp_r +0.42R vs PF 1.45, +0.22R con
+  TP fijo). SL chico al entrar + quedarse montado mientras Pivot (banda
+  ancha, tolera ruido) siga sosteniendo la tendencia, en vez de un
+  target fijo. Trailing con AlphaTrend (la misma línea que entra) NO
+  funciona -te saca por ruido, winrate cae a ~17-26%. Ver
+  `runs/2026-09-17_trailing_exit.txt`.
 - **⚠️ Esa ventaja es específica de 15m, no se generaliza.** Repetido
   el mismo barrido de R-múltiplo (incluyendo RR negativo, 1:0.25 a
   1:1) en 1m/2m/5m: el profit factor de test NUNCA cruza 1.0 en ningún
