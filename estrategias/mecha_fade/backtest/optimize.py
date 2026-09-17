@@ -41,12 +41,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     ap.add_argument("--at-period", type=parse_int_list, default=[14])
     ap.add_argument("--at-mult", type=parse_float_list, default=[1.0])
+    ap.add_argument("--piv-period", type=parse_int_list, default=[2])
+    ap.add_argument("--piv-atr-factor", type=parse_float_list, default=[3.0])
     ap.add_argument("--diy-swing-length", type=parse_int_list, default=[10])
     ap.add_argument("--diy-box-width", type=parse_float_list, default=[2.5])
     ap.add_argument("--confluence-need", type=parse_int_list, default=[1])
     ap.add_argument("--sl-buffer-atr", type=parse_float_list, default=[0.10])
     ap.add_argument("--tp-r-mult", type=parse_float_list, default=[1.5])
 
+    ap.add_argument("--piv-atr-period", type=int, default=10)
     ap.add_argument("--diy-atr-len", type=int, default=50)
     ap.add_argument("--diy-overlap-atr-mult", type=float, default=2.0)
     ap.add_argument("--atr-len", type=int, default=14)
@@ -64,14 +67,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFrame:
     rows = []
     combos = list(itertools.product(
-        args.at_period, args.at_mult, args.diy_swing_length, args.diy_box_width,
+        args.at_period, args.at_mult, args.piv_period, args.piv_atr_factor,
+        args.diy_swing_length, args.diy_box_width,
         args.confluence_need, args.sl_buffer_atr, args.tp_r_mult,
     ))
     print(f"Probando {len(combos)} combinaciones...", file=sys.stderr)
 
-    for at_period, at_mult, diy_swing_length, diy_box_width, confluence_need, sl_buffer_atr, tp_r_mult in combos:
+    for at_period, at_mult, piv_period, piv_atr_factor, diy_swing_length, diy_box_width, confluence_need, sl_buffer_atr, tp_r_mult in combos:
         p = Params(
             at_period=at_period, at_mult=at_mult,
+            piv_period=piv_period, piv_atr_period=args.piv_atr_period, piv_atr_factor=piv_atr_factor,
             diy_swing_length=diy_swing_length, diy_box_width=diy_box_width,
             diy_atr_len=args.diy_atr_len, diy_overlap_atr_mult=args.diy_overlap_atr_mult,
             confluence_need=confluence_need,
@@ -86,6 +91,7 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
         _, s_test = simulate(df_test, p)
         rows.append({
             "at_period": at_period, "at_mult": at_mult,
+            "piv_period": piv_period, "piv_atr_factor": piv_atr_factor,
             "diy_swing_length": diy_swing_length, "diy_box_width": diy_box_width,
             "confluence_need": confluence_need,
             "sl_buffer_atr": sl_buffer_atr, "tp_r_mult": tp_r_mult,

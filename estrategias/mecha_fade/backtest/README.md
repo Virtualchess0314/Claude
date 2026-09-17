@@ -19,12 +19,18 @@ quedaron así:
 
 - **AlphaTrend**: indicador externo, no forma parte del script "DIY".
   Fórmula pública estándar (ratchet ATR/RSI o ATR/MFI).
-- **Pivot**: floor pivots clásicos "Traditional", calculados con el
-  High/Low/Close del día de trading **anterior** (P, R1-R3, S1-S3).
+- **Pivot**: **no son floor pivots de piso** (primer intento, descartado
+  tras ver una captura del gráfico real) sino el indicador público
+  **"Pivot Point SuperTrend"** — pivotes de swing (`ta.pivothigh`/`low`)
+  promediados en una línea "center" con suavizado recursivo, envuelta en
+  un trailing stop tipo SuperTrend sobre ATR. Es la línea roja/verde
+  escalonada que cambia de lado cuando el precio la cruza.
 - **DIY**: la función "Supply/Demand Zone" del script ZP — cajas de
   soporte/resistencia ancladas a los últimos swing high/low, con un
   buffer de ATR(50) y ruptura tipo BOS (la zona se desactiva cuando el
-  cierre la cruza).
+  cierre la cruza). El "punto rojo" que se ve en el gráfico es el
+  marcador de POI (punto medio) de una zona recién formada — aparece
+  como un punto porque la caja nace angosta.
 
 **Simplificación documentada sobre DIY**: el script original mantiene
 un historial de hasta 20 zonas por lado, con varias activas en
@@ -58,12 +64,9 @@ Quedan 2 cosas sin definir que **cambian el resultado del backtest**:
   Usa RSI por default; si el CSV trae volumen y se activa
   `at_use_volume`, usa MFI en su lugar (igual al toggle "non-crypto
   pairs" del indicador original).
-- **Pivot**: floor pivots "Traditional" con el H/L/C del día de trading
-  anterior (`classic_daily_pivots()`), agrupando las velas del CSV por
-  fecha calendario en `session_tz` — aproximación razonable ya que no
-  hay un chart diario separado, sólo velas intradía (documentado, no
-  escondido). Cualquiera de los 7 niveles (P, R1-R3, S1-S3) puede
-  disparar la señal.
+- **Pivot**: Pivot Point SuperTrend (`pivot_point_supertrend()`) — ver
+  definición arriba. Una única línea (como AlphaTrend) que actúa de
+  soporte o resistencia según el trend vigente.
 - **DIY**: zona de Supply/Demand (`supply_demand_zones()`) — ver
   definición arriba.
 - **Señal**: para cada nivel/zona, "mecha por fuera + cierre adentro" ->
@@ -114,10 +117,6 @@ subir el profit factor.
 - Los 2 puntos abiertos de arriba (confluencia y regla de salida).
 - La simplificación de "una sola zona activa por lado" en DIY (ver
   definición arriba).
-- Los floor pivots usan velas intradía agrupadas por fecha calendario
-  como aproximación de un día de trading "de verdad" — puede diferir
-  ligeramente de un pivot calculado con datos de sesión extendida o de
-  un chart diario nativo.
 - Si en la misma vela se tocan SL y TP, se asume que el SL se ejecuta
   primero (supuesto conservador, igual que en ifvg_sniper/upf_artillery).
 - El cierre por fin de sesión se aproxima al precio de cierre de esa vela.

@@ -5,19 +5,19 @@ como que el nivel de pivot que estaba vigente deja de ser tocado por el
 precio durante TODA la vida del nuevo tramo de AlphaTrend (hasta el
 próximo flip).
 
-Corre DOS versiones de "pivot" porque el usuario no confirmó cuál quiso
-decir, y sólo una tiene sentido literal con "matar" (un nivel fijo no
-puede "morir"):
+Corre DOS versiones de "pivot":
 
-  1. Pivot SWING (fractal, ta.pivothigh/pivotlow) -la interpretación con
-     la que "matar" tiene sentido literal: un swing high/low es un nivel
-     que nace en un momento puntual. Ante un flip alcista se usa el
+  1. Pivot Point SuperTrend (el indicador REAL -confirmado con el
+     usuario mirando el gráfico: la línea roja/verde escalonada). Se
+     toma el valor de esa línea en el momento del flip de AlphaTrend
+     como "el nivel en juego", y se revisa si el precio lo vuelve a
+     tocar antes del próximo flip.
+  2. Pivot SWING genérico (fractal, ta.pivothigh/pivotlow) -referencia
+     exploratoria adicional, no es el indicador real del usuario pero
+     sirve para comparar contra un swing "puro" sin el suavizado/bandas
+     de ATR del Pivot Point SuperTrend. Ante un flip alcista se usa el
      último swing HIGH confirmado (el que la ruptura acaba de romper);
      ante un flip bajista, el último swing LOW.
-  2. Pivot CLÁSICO (floor pivots del día, la versión ya implementada en
-     engine.py) -acá "matar" se interpreta como "el nivel más cercano al
-     precio en el momento del flip nunca vuelve a ser tocado durante el
-     tramo".
 
 Para cada flip de AlphaTrend, se identifica el pivot relevante y se
 revisa si el precio lo vuelve a tocar (low<=nivel<=high de alguna vela)
@@ -41,7 +41,7 @@ from data import load_csv
 from engine import (
     Params,
     alpha_trend,
-    classic_daily_pivots,
+    pivot_point_supertrend,
     pivots,
 )
 
@@ -135,27 +135,28 @@ def test_swing_pivot_kill(df: pd.DataFrame, regime: np.ndarray, flips: np.ndarra
     return summarize_kill_results(results)
 
 
-def test_classic_pivot_kill(df: pd.DataFrame, regime: np.ndarray, flips: np.ndarray, session_tz: str) -> dict:
-    h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
-    levels_df = classic_daily_pivots(df, session_tz)
-    levels = levels_df.to_numpy()  # (n, 7): pp,r1,s1,r2,s2,r3,s3
+def test_ppst_pivot_kill(df: pd.DataFrame, flips: np.ndarray, p: Params) -> dict:
+    """
+    "Pivot" = Pivot Point SuperTrend real. Se toma el valor de la línea
+    en el momento del flip de AlphaTrend como nivel en juego, y se
+    revisa si el precio la vuelve a tocar antes del próximo flip.
+    """
+    h, l = df["high"].to_numpy(), df["low"].to_numpy()
+    piv_line, _piv_trend = pivot_point_supertrend(df, p)
     n = len(df)
 
     results = []
     for idx, flip_i in enumerate(flips):
-        row = levels[flip_i]
-        valid = row[~np.isnan(row)]
-        if valid.size == 0:
+        level = piv_line[flip_i]
+        if np.isnan(level):
             continue
-        # nivel más cercano al precio en el momento del flip
-        nearest = valid[np.argmin(np.abs(valid - c[flip_i]))]
         seg_end = flips[idx + 1] if idx + 1 < len(flips) else n
         touched = False
         for j in range(flip_i + 1, seg_end):
-            if l[j] <= nearest <= h[j]:
+            if l[j] <= level <= h[j]:
                 touched = True
                 break
-        results.append({"flip_bar": flip_i, "level": nearest, "seg_len": seg_end - flip_i, "killed": not touched})
+        results.append({"flip_bar": flip_i, "level": level, "seg_len": seg_end - flip_i, "killed": not touched})
     return summarize_kill_results(results)
 
 
@@ -175,7 +176,10 @@ def summarize_kill_results(results: list[dict]) -> dict:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv_path")
-    ap.add_argument("--swing-length", type=int, default=3, help="left=right para el pivot swing/fractal")
+    ap.add_argument("--swing-length", type=int, default=3, help="left=right para el pivot swing genérico")
+    ap.add_argument("--piv-period", type=int, default=2, help="left=right para el Pivot Point SuperTrend real")
+    ap.add_argument("--piv-atr-period", type=int, default=10)
+    ap.add_argument("--piv-atr-factor", type=float, default=3.0)
     ap.add_argument("--at-period", type=int, default=14)
     ap.add_argument("--at-mult", type=float, default=1.0)
     ap.add_argument("--min-segment-bars", type=int, default=1,
@@ -184,7 +188,8 @@ def main():
 
     df = load_csv(args.csv_path)
     volume_available = "volume" in df.columns
-    p = Params(at_period=args.at_period, at_mult=args.at_mult, at_use_volume=False)
+    p = Params(at_period=args.at_period, at_mult=args.at_mult, at_use_volume=False,
+               piv_period=args.piv_period, piv_atr_period=args.piv_atr_period, piv_atr_factor=args.piv_atr_factor)
 
     regime, flips_raw = detect_alphatrend_flips(df, p, volume_available)
     flips = filter_genuine_flips(regime, flips_raw, len(df), args.min_segment_bars)
@@ -193,16 +198,16 @@ def main():
     if args.min_segment_bars > 1:
         print(f"Flips tras filtrar tramos < {args.min_segment_bars} velas: {len(flips)}", file=sys.stderr)
 
-    print(f"\n=== Pivot SWING (fractal, left=right={args.swing_length}) ===")
-    r1 = test_swing_pivot_kill(df, regime, flips, args.swing_length)
-    print(f"Flips testeados (con pivot swing disponible): {r1['n_flips_tested']}")
+    print(f"\n=== Pivot Point SuperTrend (indicador real, period={args.piv_period}) ===")
+    r1 = test_ppst_pivot_kill(df, flips, p)
+    print(f"Flips testeados (con Pivot disponible): {r1['n_flips_tested']}")
     if r1["n_flips_tested"] > 0:
         print(f"Pivot 'muerto' (nunca vuelto a tocar) en: {r1['n_killed']} ({r1['pct_killed']:.1f}%)")
         print(f"Duración promedio del tramo: {r1['avg_seg_len_bars']:.1f} velas")
 
-    print(f"\n=== Pivot CLÁSICO (floor pivots del día) ===")
-    r2 = test_classic_pivot_kill(df, regime, flips, p.session_tz)
-    print(f"Flips testeados (con pivot clásico disponible): {r2['n_flips_tested']}")
+    print(f"\n=== Pivot SWING genérico (fractal, left=right={args.swing_length}) ===")
+    r2 = test_swing_pivot_kill(df, regime, flips, args.swing_length)
+    print(f"Flips testeados (con pivot swing disponible): {r2['n_flips_tested']}")
     if r2["n_flips_tested"] > 0:
         print(f"Pivot 'muerto' (nunca vuelto a tocar) en: {r2['n_killed']} ({r2['pct_killed']:.1f}%)")
         print(f"Duración promedio del tramo: {r2['avg_seg_len_bars']:.1f} velas")

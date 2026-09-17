@@ -9,16 +9,21 @@
 // al cierre de esa vela buscando el movimiento opuesto (fade).
 //
 // Definición de los 3 indicadores (confirmada con el usuario tras
-// compartir el código de "DIY Custom Strategy Builder [ZP]"):
+// compartir el código de "DIY Custom Strategy Builder [ZP]" y una
+// captura del gráfico real):
 //   - AlphaTrend: indicador externo (no está en el script "DIY").
 //     Fórmula pública estándar (ratchet ATR/RSI o ATR/MFI).
-//   - Pivot: floor pivots clásicos "Traditional", con el H/L/C del día
-//     de trading ANTERIOR (P, R1-R3, S1-S3).
+//   - Pivot: NO son floor pivots de piso (primer intento, descartado)
+//     sino el indicador público "Pivot Point SuperTrend" -pivotes de
+//     swing promediados en una línea "center", envuelta en un trailing
+//     stop tipo SuperTrend sobre ATR. Es la línea roja/verde escalonada
+//     que el usuario identificó en el gráfico real.
 //   - DIY: el usuario confirmó que de ese script sólo usa la función de
 //     "Supply/Demand Zone" (cajas soporte/resistencia ancladas a los
 //     últimos swing high/low, con buffer de ATR(50) y ruptura/BOS) -no
 //     el motor de ~35 indicadores líder + confirmaciones que trae el
-//     resto del script.
+//     resto del script. El "punto rojo" que se ve en el gráfico es el
+//     marcador de POI de una zona recién formada (nace angosta).
 //
 // Simplificación sobre la zona Supply/Demand: el script original
 // mantiene hasta 20 zonas por lado, pudiendo tener varias activas en
@@ -46,9 +51,11 @@ at_period     = input.int(14, "Período (ATR/RSI/MFI)", group=grpAT)
 at_mult       = input.float(1.0, "Multiplicador ATR", group=grpAT)
 at_use_volume = input.bool(false, "Usar MFI (necesita volumen real, si no cae a RSI)", group=grpAT)
 
-// ── Inputs: Pivot (floor pivots clásicos) ─────────────────────────
-grpPiv = "Pivot (floor pivots, día anterior)"
-showPivotLines = input.bool(true, "Mostrar líneas de pivot", group=grpPiv)
+// ── Inputs: Pivot (Pivot Point SuperTrend) ─────────────────────────
+grpPiv = "Pivot (Pivot Point SuperTrend)"
+piv_period     = input.int(2, "Pivot Period (left=right)", group=grpPiv)
+piv_atr_period = input.int(10, "ATR Period", group=grpPiv)
+piv_atr_factor = input.float(3.0, "ATR Factor", group=grpPiv)
 
 // ── Inputs: DIY (Supply/Demand Zone) ─────────────────────────────
 grpDiy = "DIY (Supply/Demand Zone)"
@@ -85,17 +92,26 @@ momentum = at_use_volume ? ta.mfi(hlc3, at_period) : ta.rsi(close, at_period)
 var float alphaTrend = na
 alphaTrend := momentum >= 50 ? math.max(upT, nz(alphaTrend[1], upT)) : math.min(downT, nz(alphaTrend[1], downT))
 
-// ── Core: Pivot (floor pivots "Traditional", día anterior) ─────────
-[pdHigh, pdLow, pdClose] = request.security(syminfo.tickerid, "D", [high[1], low[1], close[1]], lookahead=barmerge.lookahead_on)
-pp = (pdHigh + pdLow + pdClose) / 3
-r1 = 2 * pp - pdLow
-s1 = 2 * pp - pdHigh
-r2 = pp + (pdHigh - pdLow)
-s2 = pp - (pdHigh - pdLow)
-r3 = pdHigh + 2 * (pp - pdLow)
-s3 = pdLow - 2 * (pdHigh - pp)
+// ── Core: Pivot (Pivot Point SuperTrend, fórmula pública estándar) ──
+pivATR = ta.atr(piv_atr_period)
+piv_ph = ta.pivothigh(high, piv_period, piv_period)
+piv_pl = ta.pivotlow(low, piv_period, piv_period)
 
-pivotLevels = array.from(pp, r1, s1, r2, s2, r3, s3)
+var float pivCenter = na
+pivNewPP = not na(piv_ph) ? piv_ph : not na(piv_pl) ? piv_pl : na
+if not na(pivNewPP)
+    pivCenter := na(pivCenter[1]) ? pivNewPP : (pivCenter[1] * 2 + pivNewPP) / 3
+
+pivUp = pivCenter - piv_atr_factor * pivATR
+pivDn = pivCenter + piv_atr_factor * pivATR
+
+var float pivTup = na
+var float pivTdown = na
+var float pivTrend = 1.0
+pivTup := close[1] > nz(pivTup[1], pivUp) ? math.max(pivUp, nz(pivTup[1], pivUp)) : pivUp
+pivTdown := close[1] < nz(pivTdown[1], pivDn) ? math.min(pivDn, nz(pivTdown[1], pivDn)) : pivDn
+pivTrend := close > nz(pivTdown[1], pivDn) ? 1.0 : close < nz(pivTup[1], pivUp) ? -1.0 : nz(pivTrend[1], 1.0)
+pivotLine = pivTrend == 1.0 ? pivTup : pivTdown
 
 // ── Core: DIY = zona de Supply/Demand (única del script ZP que se usa) ─
 atrpoi = ta.atr(diy_atr_len)
@@ -145,15 +161,10 @@ if not na(demBot) and close <= demBot
 long_at  = not na(alphaTrend) and close > alphaTrend and low < alphaTrend
 short_at = not na(alphaTrend) and close < alphaTrend and high > alphaTrend
 
-// Pivot: cualquiera de los 7 niveles (P, R1-R3, S1-S3) puede disparar.
-long_piv = false
-short_piv = false
-for lvl in pivotLevels
-    if not na(lvl)
-        if low < lvl and close > lvl
-            long_piv := true
-        if high > lvl and close < lvl
-            short_piv := true
+// Pivot: línea única (Pivot Point SuperTrend) que actúa como soporte o
+// resistencia según el trend -mismo criterio que AlphaTrend.
+long_piv  = not na(pivotLine) and close > pivotLine and low < pivotLine
+short_piv = not na(pivotLine) and close < pivotLine and high > pivotLine
 
 // DIY: soporte = borde superior de la zona demanda, resistencia = borde
 // inferior de la zona oferta (el borde más cercano al precio).
@@ -213,13 +224,7 @@ if is_eod and strategy.position_size != 0
 // ── Visuales ──────────────────────────────────────────────────────
 plot(alphaTrend, "AlphaTrend", color=color.new(#00e600, 0), linewidth=2)
 
-plot(showPivotLines ? pp : na, "PP", color=color.new(#FB8C00, 0))
-plot(showPivotLines ? r1 : na, "R1", color=color.new(color.red, 40))
-plot(showPivotLines ? s1 : na, "S1", color=color.new(color.green, 40))
-plot(showPivotLines ? r2 : na, "R2", color=color.new(color.red, 60))
-plot(showPivotLines ? s2 : na, "S2", color=color.new(color.green, 60))
-plot(showPivotLines ? r3 : na, "R3", color=color.new(color.red, 75))
-plot(showPivotLines ? s3 : na, "S3", color=color.new(color.green, 75))
+plot(pivotLine, "Pivot Point SuperTrend", color=pivTrend == 1.0 ? color.new(color.lime, 0) : color.new(color.red, 0), linewidth=2, style=plot.style_linebr)
 
 plot(supTop, "DIY Supply Top", color=color.new(color.red, 30), style=plot.style_linebr)
 plot(supBot, "DIY Supply Bottom", color=color.new(color.red, 30), style=plot.style_linebr)

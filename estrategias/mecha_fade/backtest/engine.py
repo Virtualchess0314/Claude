@@ -10,21 +10,25 @@ adentro (barrido de liquidez / falso quiebre), se entra a MERCADO en el
 cierre de esa vela buscando el movimiento opuesto (fade).
 
 Definición de los 3 indicadores (confirmada con el usuario tras compartir
-el código del indicador "DIY Custom Strategy Builder [ZP]"):
+el código del indicador "DIY Custom Strategy Builder [ZP]" y una captura
+del gráfico real):
 
   - AlphaTrend: indicador externo, no está en el script "DIY". Fórmula
     pública estándar (ratchet sobre ATR/RSI o ATR/MFI).
-  - Pivot: Pivot Points clásicos de piso ("Traditional"), anclados al día
-    de trading anterior (P, R1-R3, S1-S3). Es un indicador aparte del
-    "DIY" (ese script trae su propia sección de Pivot Points, pero el
-    usuario aclaró que del "DIY" sólo usa la parte de soportes/resistencias
-    -ver abajo- así que Pivot se trata como una fuente independiente con
-    la fórmula clásica de piso).
+  - Pivot: NO son floor pivots de piso (primer intento, descartado) sino
+    el indicador público "Pivot Point SuperTrend" -pivotes de swing
+    (ta.pivothigh/low) promediados en una línea "center", envueltos en un
+    trailing stop tipo SuperTrend sobre ATR. Es la línea roja/verde
+    escalonada que el usuario identificó en el gráfico (cambia de color
+    cuando el precio la cruza). Replicado en `pivot_point_supertrend()`.
   - DIY: el usuario confirmó que de ese script sólo usa la función de
     "Supply/Demand Zone" (las cajas soporte/resistencia ancladas a los
     últimos swing high/low, con un buffer de ATR(50) y lógica de ruptura/
     BOS) -no el motor de señales de ~35 indicadores líder + confirmaciones
     que trae el resto del script. Replicado en `supply_demand_zones()`.
+    El "punto rojo" que se ve en el gráfico es el marcador de POI (punto
+    medio) de una zona recién formada -aparece como un punto porque la
+    caja nace angosta (sólo `diy_swing_length` velas de ancho).
 
 ⚠️ PENDIENTE DE CONFIRMAR — 2 huecos que siguen sin definición del
 usuario, con un supuesto explícito documentado para tener un motor
@@ -82,7 +86,11 @@ class Params:
     at_mult: float = 1.0
     at_use_volume: bool = False  # si no hay columna volume, se fuerza False igual
 
-    # Pivot (floor pivots clásicos, "Traditional", ancla diaria)
+    # Pivot (Pivot Point SuperTrend)
+    piv_period: int = 2         # left=right para ta.pivothigh/pivotlow (prd)
+    piv_atr_period: int = 10    # ATR del trailing stop (Pd)
+    piv_atr_factor: float = 3.0  # multiplicador del ATR (Factor)
+
     session_tz: str = "America/New_York"
 
     # DIY = Supply/Demand Zone del indicador ZP (ver docstring del módulo)
@@ -201,38 +209,69 @@ def pivots(high: np.ndarray, low: np.ndarray, left: int, right: int) -> tuple[np
     return piv_h, piv_l
 
 
-def classic_daily_pivots(df: pd.DataFrame, session_tz: str) -> pd.DataFrame:
+def pivot_point_supertrend(df: pd.DataFrame, p: Params) -> tuple[np.ndarray, np.ndarray]:
     """
-    Floor pivots "Traditional" (P, R1-R3, S1-S3), calculados con el
-    High/Low/Close del día de trading ANTERIOR (ancla diaria, igual al
-    default "Auto"/"Daily" + "Use Daily-based Values" de ta.pivot_point_levels
-    en Pine). El día de trading se define por fecha calendario en
-    `session_tz` -aproximación razonable ya que sólo tenemos velas
-    intradía, no un chart diario separado (documentado, no escondido).
-    Devuelve un DataFrame alineado 1:1 con `df` (mismo índice), con
-    columnas pp/r1/s1/r2/s2/r3/s3. Las velas del primer día quedan en NaN
-    (no hay día anterior del cual calcular).
+    Pivot Point SuperTrend (indicador público, el que el usuario identificó
+    como "Pivot" en el gráfico -línea roja/verde escalonada). Fórmula
+    estándar (script "Pivot Point Supertrend" de LonesomeTheBlue, muy
+    replicado en la comunidad de TradingView):
+
+      1. Pivotes de swing (ta.pivothigh/pivotlow, left=right=piv_period).
+      2. Se promedian en una línea "center" con suavizado recursivo:
+         center = pivote nuevo si es el primero, si no
+         center = (center_anterior*2 + pivote_nuevo) / 3.
+      3. Bandas: Up = center - Factor*ATR(piv_atr_period),
+                 Dn = center + Factor*ATR(piv_atr_period).
+      4. Trailing stop tipo SuperTrend sobre esas bandas: ratchetea
+         mientras el cierre se mantenga del lado correspondiente, y el
+         "trend" (soporte=1 / resistencia=-1) flipea cuando el cierre
+         cruza la banda contraria.
+
+    Devuelve (line, trend): `line` es el valor de la línea graficada
+    (Tup cuando trend=1, Tdown cuando trend=-1); `trend` es 1/-1/NaN.
     """
-    local_dates = df.index.tz_convert(session_tz).date
-    daily = pd.DataFrame({
-        "date": local_dates,
-        "high": df["high"].to_numpy(),
-        "low": df["low"].to_numpy(),
-        "close": df["close"].to_numpy(),
-    })
-    daily_ohlc = daily.groupby("date").agg(h=("high", "max"), l=("low", "min"), c=("close", "last"))
-    prev = daily_ohlc.shift(1)
+    h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
+    atr = wilder_atr(df["high"], df["low"], df["close"], p.piv_atr_period)
+    piv_h, piv_l = pivots(h, l, p.piv_period, p.piv_period)
 
-    pp = (prev["h"] + prev["l"] + prev["c"]) / 3.0
-    r1 = 2 * pp - prev["l"]
-    s1 = 2 * pp - prev["h"]
-    r2 = pp + (prev["h"] - prev["l"])
-    s2 = pp - (prev["h"] - prev["l"])
-    r3 = prev["h"] + 2 * (pp - prev["l"])
-    s3 = prev["l"] - 2 * (prev["h"] - pp)
+    n = len(df)
+    center = np.full(n, np.nan)
+    last_center = np.nan
+    for i in range(n):
+        new_pp = piv_h[i] if not np.isnan(piv_h[i]) else (piv_l[i] if not np.isnan(piv_l[i]) else np.nan)
+        if not np.isnan(new_pp):
+            last_center = new_pp if np.isnan(last_center) else (last_center * 2 + new_pp) / 3.0
+        center[i] = last_center
 
-    levels = pd.DataFrame({"pp": pp, "r1": r1, "s1": s1, "r2": r2, "s2": s2, "r3": r3, "s3": s3})
-    return levels.reindex(local_dates).reset_index(drop=True).set_index(df.index)
+    up = center - p.piv_atr_factor * atr
+    dn = center + p.piv_atr_factor * atr
+
+    tup = np.full(n, np.nan)
+    tdown = np.full(n, np.nan)
+    trend = np.full(n, np.nan)
+    line = np.full(n, np.nan)
+
+    for i in range(n):
+        if np.isnan(up[i]) or np.isnan(dn[i]):
+            continue
+        prev_close = c[i - 1] if i > 0 else np.nan
+        prev_tup = tup[i - 1] if i > 0 and not np.isnan(tup[i - 1]) else up[i]
+        prev_tdown = tdown[i - 1] if i > 0 and not np.isnan(tdown[i - 1]) else dn[i]
+
+        tup[i] = max(up[i], prev_tup) if (not np.isnan(prev_close) and prev_close > prev_tup) else up[i]
+        tdown[i] = min(dn[i], prev_tdown) if (not np.isnan(prev_close) and prev_close < prev_tdown) else dn[i]
+
+        prev_trend = trend[i - 1] if i > 0 and not np.isnan(trend[i - 1]) else 1.0
+        if c[i] > prev_tdown:
+            trend[i] = 1.0
+        elif c[i] < prev_tup:
+            trend[i] = -1.0
+        else:
+            trend[i] = prev_trend
+
+        line[i] = tup[i] if trend[i] == 1.0 else tdown[i]
+
+    return line, trend
 
 
 def supply_demand_zones(
@@ -292,9 +331,6 @@ def _within_session(ct_min: int, p: Params) -> tuple[bool, bool]:
     return ct_min < cutoff, ct_min >= cutoff
 
 
-_PIVOT_COLS = ("pp", "r1", "s1", "r2", "s2", "r3", "s3")
-
-
 def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     o, h, l, c = df["open"].to_numpy(), df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
     ts = df.index
@@ -302,7 +338,7 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     volume_available = "volume" in df.columns
 
     alpha = alpha_trend(df, p, volume_available)
-    pivot_levels = classic_daily_pivots(df, p.session_tz).to_numpy()  # shape (n, 7), orden = _PIVOT_COLS
+    piv_line, _piv_trend = pivot_point_supertrend(df, p)
 
     atrpoi = wilder_atr(df["high"], df["low"], df["close"], p.diy_atr_len)
     demand_top, demand_bottom, supply_top, supply_bottom = supply_demand_zones(h, l, c, atrpoi, p)
@@ -371,16 +407,8 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
             long_at = not np.isnan(alpha[i]) and c[i] > alpha[i] and l[i] < alpha[i]
             short_at = not np.isnan(alpha[i]) and c[i] < alpha[i] and h[i] > alpha[i]
 
-            long_piv = False
-            short_piv = False
-            for k in range(len(_PIVOT_COLS)):
-                lvl = pivot_levels[i, k]
-                if np.isnan(lvl):
-                    continue
-                if l[i] < lvl and c[i] > lvl:
-                    long_piv = True
-                if h[i] > lvl and c[i] < lvl:
-                    short_piv = True
+            long_piv = not np.isnan(piv_line[i]) and c[i] > piv_line[i] and l[i] < piv_line[i]
+            short_piv = not np.isnan(piv_line[i]) and c[i] < piv_line[i] and h[i] > piv_line[i]
 
             long_diy = not np.isnan(demand_top[i]) and l[i] < demand_top[i] and c[i] > demand_top[i]
             short_diy = not np.isnan(supply_bottom[i]) and h[i] > supply_bottom[i] and c[i] < supply_bottom[i]
