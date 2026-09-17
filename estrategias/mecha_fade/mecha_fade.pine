@@ -1,0 +1,163 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════
+// Mecha Fade [AlphaTrend + Pivot + DIY] - reversión de mecha (wick fade)
+//
+// Idea del usuario: 3 indicadores (AlphaTrend, Pivot, "DIY") actúan cada
+// uno como un nivel de soporte/resistencia. Cuando una vela mete una
+// mecha por FUERA de uno de esos niveles pero CIERRA de nuevo adentro,
+// se interpreta como un barrido de liquidez / falso quiebre, y se entra
+// al cierre de esa vela buscando el movimiento opuesto (fade).
+//
+// ⚠️ PENDIENTE DE CONFIRMAR: el indicador "DIY" no se pudo identificar
+// (no hay una fórmula pública estándar con ese nombre). Se implementó
+// como un PLACEHOLDER (canal Donchian: máximo/mínimo de N velas) sólo
+// para poder armar y probar el motor completo. Reemplazar `diyUpper`/
+// `diyLower` por el indicador real antes de confiar en cualquier
+// resultado de backtest que lo incluya.
+//
+// Tampoco había regla de salida (SL/TP) especificada -se usó SL más
+// allá del extremo de la mecha (+ buffer ATR) y TP a un múltiplo R del
+// riesgo, ambos parametrizables, para poder barrer combinaciones.
+//
+// Educational tool. Not financial advice.
+// ═══════════════════════════════════════════════════════════════════
+strategy('Mecha Fade [AlphaTrend+Pivot+DIY]', shorttitle='MechaFade', overlay=true,
+     initial_capital=50000, default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_contract, commission_value=0,
+     calc_on_every_tick=false, process_orders_on_close=true,
+     margin_long=5, margin_short=5,
+     max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+// ── Inputs: AlphaTrend ──────────────────────────────────────────
+grpAT = "AlphaTrend"
+at_period     = input.int(14, "Período (ATR/RSI/MFI)", group=grpAT)
+at_mult       = input.float(1.0, "Multiplicador ATR", group=grpAT)
+at_use_volume = input.bool(false, "Usar MFI (necesita volumen real, si no cae a RSI)", group=grpAT)
+
+// ── Inputs: Pivot ────────────────────────────────────────────────
+grpPiv = "Pivot"
+piv_left  = input.int(3, "Barras a la izquierda", group=grpPiv)
+piv_right = input.int(2, "Barras a la derecha", group=grpPiv)
+
+// ── Inputs: DIY (placeholder, ver nota arriba) ───────────────────
+grpDiy = "DIY (placeholder Donchian - REEMPLAZAR)"
+diy_period = input.int(20, "Período canal Donchian", group=grpDiy)
+
+// ── Inputs: Confluencia ───────────────────────────────────────────
+grpConf = "Confluencia"
+confluence_need = input.int(1, "Mínimo de indicadores que deben coincidir (1=cualquiera, 3=los 3)", minval=1, maxval=3, group=grpConf)
+
+// ── Inputs: Riesgo / salida ───────────────────────────────────────
+grpRisk = "Riesgo"
+atr_len       = input.int(14, "ATR Length (riesgo)", group=grpRisk)
+sl_buffer_atr = input.float(0.10, "Buffer SL más allá de la mecha (x ATR)", group=grpRisk)
+tp_r_mult     = input.float(1.5, "Take Profit (múltiplo de R)", group=grpRisk)
+max_risk_usd  = input.float(150.0, "Riesgo máximo por operación (USD)", group=grpRisk)
+point_value   = input.float(2.0, "Valor por punto (USD) - MNQ=2", group=grpRisk)
+max_qty       = input.int(40, "Contratos máximos", group=grpRisk)
+
+// ── Inputs: Sesión / control diario ───────────────────────────────
+grpSess = "Sesión"
+use_session   = input.bool(true, "Cerrar todo al fin de sesión", group=grpSess)
+sess_close_hh = input.int(16, "Hora de cierre (HH, hora NY)", group=grpSess)
+sess_close_mm = input.int(45, "Hora de cierre (MM)", group=grpSess)
+max_trades    = input.int(999, "Máx. operaciones/día (999 = sin límite)", group=grpSess)
+
+// ── Core: AlphaTrend ───────────────────────────────────────────────
+atrAT = ta.atr(at_period)
+upT = low - atrAT * at_mult
+downT = high + atrAT * at_mult
+momentum = at_use_volume ? ta.mfi(hlc3, at_period) : ta.rsi(close, at_period)
+var float alphaTrend = na
+alphaTrend := momentum >= 50 ? math.max(upT, nz(alphaTrend[1], upT)) : math.min(downT, nz(alphaTrend[1], downT))
+
+// ── Core: Pivot (última mecha alta/baja confirmada) ────────────────
+piv_h = ta.pivothigh(high, piv_left, piv_right)
+piv_l = ta.pivotlow(low, piv_left, piv_right)
+var float last_ph = na
+var float last_pl = na
+if not na(piv_h)
+    last_ph := piv_h
+if not na(piv_l)
+    last_pl := piv_l
+
+// ── Core: DIY placeholder (canal Donchian) ─────────────────────────
+diyUpper = ta.highest(high, diy_period)
+diyLower = ta.lowest(low, diy_period)
+
+// ── Señales de "mecha por fuera, cierre adentro" (fade) ────────────
+// AlphaTrend: línea única que actúa como soporte (precio arriba) o
+// resistencia (precio abajo) según el régimen -se chequean ambos lados.
+long_at  = not na(alphaTrend) and close > alphaTrend and low < alphaTrend
+short_at = not na(alphaTrend) and close < alphaTrend and high > alphaTrend
+
+// Pivot: soporte = último pivot low, resistencia = último pivot high.
+long_piv  = not na(last_pl) and low < last_pl and close > last_pl
+short_piv = not na(last_ph) and high > last_ph and close < last_ph
+
+// DIY: soporte = banda inferior, resistencia = banda superior.
+long_diy  = not na(diyLower) and low < diyLower and close > diyLower
+short_diy = not na(diyUpper) and high > diyUpper and close < diyUpper
+
+n_long  = (long_at ? 1 : 0) + (long_piv ? 1 : 0) + (long_diy ? 1 : 0)
+n_short = (short_at ? 1 : 0) + (short_piv ? 1 : 0) + (short_diy ? 1 : 0)
+
+// ── Sesión / control diario ─────────────────────────────────────────
+ch = hour(time, "America/New_York")
+cm = minute(time, "America/New_York")
+ct = ch * 60 + cm
+cutoff = sess_close_hh * 60 + sess_close_mm
+in_sess = not use_session or ct < cutoff
+is_eod = use_session and ct >= cutoff
+
+var int dtrades = 0
+new_day = ta.change(dayofmonth(time, "America/New_York")) != 0
+if new_day
+    dtrades := 0
+can_trade = dtrades < max_trades and in_sess
+
+// ── Señal final (si empatan long/short en la misma vela, se descarta -
+//    ambigua, criterio conservador) ─────────────────────────────────
+long_go  = n_long >= confluence_need and n_short < confluence_need and can_trade and strategy.position_size == 0
+short_go = n_short >= confluence_need and n_long < confluence_need and can_trade and strategy.position_size == 0
+
+// ── Ejecución ────────────────────────────────────────────────────────
+var float e_sl = na
+var float e_tp = na
+atr_risk = ta.atr(atr_len)
+
+if long_go
+    e_sl := low - atr_risk * sl_buffer_atr
+    risk_pts = close - e_sl
+    e_tp := close + risk_pts * tp_r_mult
+    qty = risk_pts > 0 ? int(math.min(max_qty, math.floor(max_risk_usd / (risk_pts * point_value)))) : 0
+    if qty > 0
+        strategy.entry("L", strategy.long, qty=qty)
+        strategy.exit("XL", "L", stop=e_sl, limit=e_tp)
+        dtrades += 1
+
+if short_go
+    e_sl := high + atr_risk * sl_buffer_atr
+    risk_pts = e_sl - close
+    e_tp := close - risk_pts * tp_r_mult
+    qty = risk_pts > 0 ? int(math.min(max_qty, math.floor(max_risk_usd / (risk_pts * point_value)))) : 0
+    if qty > 0
+        strategy.entry("S", strategy.short, qty=qty)
+        strategy.exit("XS", "S", stop=e_sl, limit=e_tp)
+        dtrades += 1
+
+if is_eod and strategy.position_size != 0
+    strategy.close_all(comment="EOD")
+
+// ── Visuales ──────────────────────────────────────────────────────
+plot(alphaTrend, "AlphaTrend", color=color.new(#00e600, 0), linewidth=2)
+plot(last_ph, "Último Pivot High", color=color.new(color.red, 30), style=plot.style_circles)
+plot(last_pl, "Último Pivot Low", color=color.new(color.green, 30), style=plot.style_circles)
+plot(diyUpper, "DIY Upper (placeholder)", color=color.new(color.orange, 50))
+plot(diyLower, "DIY Lower (placeholder)", color=color.new(color.orange, 50))
+
+plotshape(long_go, "Long Entry", shape.triangleup, location.belowbar, color.green, size=size.normal)
+plotshape(short_go, "Short Entry", shape.triangledown, location.abovebar, color.red, size=size.normal)
+
+alertcondition(long_go, "Mecha Fade Long", "Mecha Fade: entrada long")
+alertcondition(short_go, "Mecha Fade Short", "Mecha Fade: entrada short")
