@@ -1,0 +1,57 @@
+Hipótesis del usuario: "cada vez que el precio cambia de AlphaTrend por
+un breakout previo, mata al pivot (el pivot nunca vuelve a ser tocado
+durante toda la vida de ese nuevo tramo de AlphaTrend)".
+
+Veredicto: NO, no siempre pasa. Y filtrando el ruido (quedándose sólo
+con breakouts que realmente se sostienen), pasa lo CONTRARIO en la
+mayoría de los casos: el pivot vuelve a ser tocado antes del próximo
+flip.
+
+Datos: 5 archivos reales de MNQ (CME) subidos por el usuario -1m, 2m,
+5m, 15m y 240m-, entre unos meses (5m/2m/1m) y 6.5 años (240m) de
+historial. Sin filtrar, ~30% de los "flips" de AlphaTrend duran una sola
+vela (la línea cruza el precio y vuelve enseguida) -eso no es un
+breakout real, es ruido. Se agregó `--min-segment-bars N` para
+descartarlos y quedarse sólo con tramos que se sostienen al menos N
+velas.
+
+Definición de "pivot" probada de 2 formas (el usuario no confirmó cuál
+quería, y sólo una tiene sentido literal con "matar"):
+  - SWING (fractal, último swing high/low confirmado, left=right=3):
+    la única interpretación donde "matar un nivel" tiene sentido
+    literal (un floor pivot no "nace" ni "muere").
+  - CLÁSICO (floor pivots del día, la versión ya implementada en
+    engine.py): un nivel más cercano al precio en el momento del flip.
+
+Resultado clave (Pivot SWING, la interpretación literal de "matar"):
+mientras más se filtra el ruido (segmentos más largos = breakouts más
+genuinos), MENOS veces el pivot queda muerto. Es decir: cuanto más real
+el breakout, MÁS probable que el precio termine retesteando el swing
+que rompió antes del próximo flip -exactamente lo opuesto a la
+hipótesis.
+
+  min_segment_bars=1  (incluye ruido):  5m 61.2% | 15m 61.2%
+  min_segment_bars=3                :  5m 36.2% | 15m 37.0%
+  min_segment_bars=5                :  5m 27.2% | 15m 29.6% | 1m 23.1% | 2m 27.4% | 240m 25.0%
+  min_segment_bars=10               :  5m 16.4% | 15m 21.4%
+
+(% = flips donde el pivot swing roto NUNCA vuelve a ser tocado hasta el
+próximo flip de AlphaTrend)
+
+Por qué pasa esto (mecánico, no es un patrón de mercado real): un
+segmento más largo le da al precio más tiempo para deambular y volver a
+tocar el nivel viejo. Los "flips" de 1 vela parecen "matar" el pivot
+sólo porque el segmento termina casi enseguida -no porque el breakout
+haya sido más fuerte o decisivo.
+
+Pivot CLÁSICO (floor pivots): el resultado varía mucho según timeframe
+(no es consistente, tampoco sostiene "siempre"):
+  min_segment_bars=5: 1m 79.4% | 2m 63.6% | 5m 64.2% | 15m 51.2% | 240m 17.6%
+
+Conclusión práctica: no conviene usar "AlphaTrend flipeó -> ignorar el
+pivot hasta el próximo flip" como filtro absoluto. Si algo, la evidencia
+sugiere lo contrario para breakouts genuinos: vale la pena ESPERAR un
+retest del pivot roto después del flip, no descartarlo. No se probó
+filtro alternativo -esto fue sólo verificación de la hipótesis pedida.
+
+Script: estrategias/mecha_fade/backtest/analyze_alphatrend_kills_pivot.py
