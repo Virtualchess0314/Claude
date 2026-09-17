@@ -41,13 +41,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     ap.add_argument("--at-period", type=parse_int_list, default=[14])
     ap.add_argument("--at-mult", type=parse_float_list, default=[1.0])
-    ap.add_argument("--piv-left", type=parse_int_list, default=[3])
-    ap.add_argument("--piv-right", type=parse_int_list, default=[2])
-    ap.add_argument("--diy-period", type=parse_int_list, default=[20])
+    ap.add_argument("--diy-swing-length", type=parse_int_list, default=[10])
+    ap.add_argument("--diy-box-width", type=parse_float_list, default=[2.5])
     ap.add_argument("--confluence-need", type=parse_int_list, default=[1])
     ap.add_argument("--sl-buffer-atr", type=parse_float_list, default=[0.10])
     ap.add_argument("--tp-r-mult", type=parse_float_list, default=[1.5])
 
+    ap.add_argument("--diy-atr-len", type=int, default=50)
+    ap.add_argument("--diy-overlap-atr-mult", type=float, default=2.0)
     ap.add_argument("--atr-len", type=int, default=14)
     ap.add_argument("--max-risk-usd", type=float, default=150.0)
     ap.add_argument("--point-value-usd", type=float, default=2.0)
@@ -63,16 +64,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFrame:
     rows = []
     combos = list(itertools.product(
-        args.at_period, args.at_mult, args.piv_left, args.piv_right, args.diy_period,
+        args.at_period, args.at_mult, args.diy_swing_length, args.diy_box_width,
         args.confluence_need, args.sl_buffer_atr, args.tp_r_mult,
     ))
     print(f"Probando {len(combos)} combinaciones...", file=sys.stderr)
 
-    for at_period, at_mult, piv_left, piv_right, diy_period, confluence_need, sl_buffer_atr, tp_r_mult in combos:
+    for at_period, at_mult, diy_swing_length, diy_box_width, confluence_need, sl_buffer_atr, tp_r_mult in combos:
         p = Params(
             at_period=at_period, at_mult=at_mult,
-            piv_left=piv_left, piv_right=piv_right,
-            diy_period=diy_period, confluence_need=confluence_need,
+            diy_swing_length=diy_swing_length, diy_box_width=diy_box_width,
+            diy_atr_len=args.diy_atr_len, diy_overlap_atr_mult=args.diy_overlap_atr_mult,
+            confluence_need=confluence_need,
             atr_len=args.atr_len, sl_buffer_atr=sl_buffer_atr, tp_r_mult=tp_r_mult,
             max_risk_usd=args.max_risk_usd, point_value_usd=args.point_value_usd, max_qty=args.max_qty,
             max_trades_per_day=args.max_trades_per_day,
@@ -83,8 +85,9 @@ def run_grid(df_train: pd.DataFrame, df_test: pd.DataFrame, args) -> pd.DataFram
         _, s_train = simulate(df_train, p)
         _, s_test = simulate(df_test, p)
         rows.append({
-            "at_period": at_period, "at_mult": at_mult, "piv_left": piv_left, "piv_right": piv_right,
-            "diy_period": diy_period, "confluence_need": confluence_need,
+            "at_period": at_period, "at_mult": at_mult,
+            "diy_swing_length": diy_swing_length, "diy_box_width": diy_box_width,
+            "confluence_need": confluence_need,
             "sl_buffer_atr": sl_buffer_atr, "tp_r_mult": tp_r_mult,
             "train_trades": s_train["trades"], "train_profit_factor": s_train["profit_factor"],
             "train_win_rate": s_train["win_rate"], "train_expectancy_r": s_train["expectancy_r"],

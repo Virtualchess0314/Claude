@@ -9,27 +9,46 @@ una vela mete una mecha por FUERA de un nivel pero CIERRA de nuevo
 adentro (barrido de liquidez / falso quiebre), se entra a MERCADO en el
 cierre de esa vela buscando el movimiento opuesto (fade).
 
-⚠️ PENDIENTE DE CONFIRMAR — dos huecos que el usuario todavía no definió,
-rellenados acá con un supuesto explícito para poder tener un motor
+Definición de los 3 indicadores (confirmada con el usuario tras compartir
+el código del indicador "DIY Custom Strategy Builder [ZP]"):
+
+  - AlphaTrend: indicador externo, no está en el script "DIY". Fórmula
+    pública estándar (ratchet sobre ATR/RSI o ATR/MFI).
+  - Pivot: Pivot Points clásicos de piso ("Traditional"), anclados al día
+    de trading anterior (P, R1-R3, S1-S3). Es un indicador aparte del
+    "DIY" (ese script trae su propia sección de Pivot Points, pero el
+    usuario aclaró que del "DIY" sólo usa la parte de soportes/resistencias
+    -ver abajo- así que Pivot se trata como una fuente independiente con
+    la fórmula clásica de piso).
+  - DIY: el usuario confirmó que de ese script sólo usa la función de
+    "Supply/Demand Zone" (las cajas soporte/resistencia ancladas a los
+    últimos swing high/low, con un buffer de ATR(50) y lógica de ruptura/
+    BOS) -no el motor de señales de ~35 indicadores líder + confirmaciones
+    que trae el resto del script. Replicado en `supply_demand_zones()`.
+
+⚠️ PENDIENTE DE CONFIRMAR — 2 huecos que siguen sin definición del
+usuario, con un supuesto explícito documentado para tener un motor
 completo y testeable desde ya:
 
-  1. Indicador "DIY": no existe una fórmula pública estándar con ese
-     nombre. Se implementó como PLACEHOLDER = canal Donchian (máximo/
-     mínimo de `diy_period` velas). `diy_upper_lower()` es la única
-     función que hay que tocar para reemplazarlo por el indicador real
-     -todo lo demás (confluencia, entradas, salidas) no depende de cómo
-     se calcule ese nivel, sólo de que exista un valor por vela.
+  1. Confluencia: no está claro si los 3 indicadores deben coincidir a
+     la vez o alcanza con cualquiera. Default = cualquiera
+     (`confluence_need=1`), configurable 1..3.
   2. Regla de salida: no especificada. Se usó SL más allá del extremo de
      la mecha que disparó la señal (+ buffer en ATR) y TP a un múltiplo R
      de ese riesgo -ambos parametrizables (`sl_buffer_atr`, `tp_r_mult`)
      para poder barrerlos en optimize.py.
 
+Simplificación documentada sobre la zona Supply/Demand: el script
+original mantiene un historial de hasta 20 zonas por lado y permite
+varias activas en simultáneo (mientras no se solapen). Acá se sigue sólo
+la ZONA MÁS RECIENTE por lado (se reemplaza al aparecer un nuevo swing
+no solapado, se desactiva al romperse -mismo criterio BOS: cierre cruza
+el borde de la zona). Para el propósito de esta señal (fade de mecha
+contra el soporte/resistencia más cercano) alcanza con la zona vigente;
+no se replicó el historial completo de zonas.
+
 Reglas replicadas 1:1 con el .pine:
   - ATR/RSI de Wilder (misma fórmula que ta.atr/ta.rsi).
-  - AlphaTrend: fórmula pública estándar (ratchet sobre low-ATR*mult en
-    régimen alcista según RSI/MFI>=50, sobre high+ATR*mult si no).
-  - Pivotes altos/bajos no repintables (ta.pivothigh/low, confirman
-    `piv_right` barras después del extremo real).
   - Confluencia configurable: `confluence_need` indicadores de 3 deben
     coincidir en la misma dirección en la misma vela.
   - Si en la misma vela hay señal long Y short (indicadores contradictorios),
@@ -51,7 +70,6 @@ dos backtesters del repo).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -64,12 +82,14 @@ class Params:
     at_mult: float = 1.0
     at_use_volume: bool = False  # si no hay columna volume, se fuerza False igual
 
-    # Pivot
-    piv_left: int = 3
-    piv_right: int = 2
+    # Pivot (floor pivots clásicos, "Traditional", ancla diaria)
+    session_tz: str = "America/New_York"
 
-    # DIY (placeholder Donchian -ver nota en el docstring del módulo)
-    diy_period: int = 20
+    # DIY = Supply/Demand Zone del indicador ZP (ver docstring del módulo)
+    diy_swing_length: int = 10
+    diy_atr_len: int = 50
+    diy_box_width: float = 2.5       # buffer de la zona = ATR(diy_atr_len) * box_width/10
+    diy_overlap_atr_mult: float = 2.0  # no reemplaza la zona activa si el nuevo swing cae más cerca que esto
 
     # Confluencia: cuántos de los 3 indicadores deben coincidir (1..3)
     confluence_need: int = 1
@@ -84,7 +104,6 @@ class Params:
 
     # Sesión / control diario
     use_session: bool = True
-    session_tz: str = "America/New_York"
     session_close_hour: int = 16
     session_close_minute: int = 45
     max_trades_per_day: int = 999  # 999 = sin límite práctico
@@ -182,16 +201,88 @@ def pivots(high: np.ndarray, low: np.ndarray, left: int, right: int) -> tuple[np
     return piv_h, piv_l
 
 
-def diy_upper_lower(high: pd.Series, low: pd.Series, period: int) -> tuple[np.ndarray, np.ndarray]:
+def classic_daily_pivots(df: pd.DataFrame, session_tz: str) -> pd.DataFrame:
     """
-    PLACEHOLDER del indicador "DIY" -no identificado. Canal Donchian
-    (máximo/mínimo de `period` velas) sólo para tener un tercer nivel
-    con el que probar el motor completo. Reemplazar por la fórmula real
-    en cuanto se sepa cuál es; el resto del motor no depende de esto.
+    Floor pivots "Traditional" (P, R1-R3, S1-S3), calculados con el
+    High/Low/Close del día de trading ANTERIOR (ancla diaria, igual al
+    default "Auto"/"Daily" + "Use Daily-based Values" de ta.pivot_point_levels
+    en Pine). El día de trading se define por fecha calendario en
+    `session_tz` -aproximación razonable ya que sólo tenemos velas
+    intradía, no un chart diario separado (documentado, no escondido).
+    Devuelve un DataFrame alineado 1:1 con `df` (mismo índice), con
+    columnas pp/r1/s1/r2/s2/r3/s3. Las velas del primer día quedan en NaN
+    (no hay día anterior del cual calcular).
     """
-    upper = high.rolling(period).max().to_numpy()
-    lower = low.rolling(period).min().to_numpy()
-    return upper, lower
+    local_dates = df.index.tz_convert(session_tz).date
+    daily = pd.DataFrame({
+        "date": local_dates,
+        "high": df["high"].to_numpy(),
+        "low": df["low"].to_numpy(),
+        "close": df["close"].to_numpy(),
+    })
+    daily_ohlc = daily.groupby("date").agg(h=("high", "max"), l=("low", "min"), c=("close", "last"))
+    prev = daily_ohlc.shift(1)
+
+    pp = (prev["h"] + prev["l"] + prev["c"]) / 3.0
+    r1 = 2 * pp - prev["l"]
+    s1 = 2 * pp - prev["h"]
+    r2 = pp + (prev["h"] - prev["l"])
+    s2 = pp - (prev["h"] - prev["l"])
+    r3 = prev["h"] + 2 * (pp - prev["l"])
+    s3 = prev["l"] - 2 * (prev["h"] - pp)
+
+    levels = pd.DataFrame({"pp": pp, "r1": r1, "s1": s1, "r2": r2, "s2": s2, "r3": r3, "s3": s3})
+    return levels.reindex(local_dates).reset_index(drop=True).set_index(df.index)
+
+
+def supply_demand_zones(
+    high: np.ndarray, low: np.ndarray, close: np.ndarray, atrpoi: np.ndarray, p: Params
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Zona de oferta/demanda del indicador "DIY [ZP]" (única parte de ese
+    script que el usuario confirmó usar). Ver simplificación de "sólo la
+    zona más reciente por lado" en el docstring del módulo.
+
+    Devuelve (demand_top, demand_bottom, supply_top, supply_bottom), cada
+    uno un array alineado a las velas con NaN cuando no hay zona activa
+    de ese lado.
+    """
+    piv_h, piv_l = pivots(high, low, p.diy_swing_length, p.diy_swing_length)
+    n = len(high)
+    demand_top = np.full(n, np.nan)
+    demand_bottom = np.full(n, np.nan)
+    supply_top = np.full(n, np.nan)
+    supply_bottom = np.full(n, np.nan)
+
+    cur_demand = None  # (bottom, top, poi)
+    cur_supply = None  # (bottom, top, poi)
+
+    for i in range(n):
+        atr_i = atrpoi[i]
+        if not np.isnan(piv_h[i]) and not np.isnan(atr_i):
+            buf = atr_i * (p.diy_box_width / 10.0)
+            new_top, new_bottom = piv_h[i], piv_h[i] - buf
+            new_poi = (new_top + new_bottom) / 2.0
+            if cur_supply is None or abs(new_poi - cur_supply[2]) > atr_i * p.diy_overlap_atr_mult:
+                cur_supply = (new_bottom, new_top, new_poi)
+        if not np.isnan(piv_l[i]) and not np.isnan(atr_i):
+            buf = atr_i * (p.diy_box_width / 10.0)
+            new_bottom, new_top = piv_l[i], piv_l[i] + buf
+            new_poi = (new_top + new_bottom) / 2.0
+            if cur_demand is None or abs(new_poi - cur_demand[2]) > atr_i * p.diy_overlap_atr_mult:
+                cur_demand = (new_bottom, new_top, new_poi)
+
+        if cur_supply is not None and close[i] >= cur_supply[1]:
+            cur_supply = None
+        if cur_demand is not None and close[i] <= cur_demand[0]:
+            cur_demand = None
+
+        if cur_supply is not None:
+            supply_bottom[i], supply_top[i] = cur_supply[0], cur_supply[1]
+        if cur_demand is not None:
+            demand_bottom[i], demand_top[i] = cur_demand[0], cur_demand[1]
+
+    return demand_top, demand_bottom, supply_top, supply_bottom
 
 
 def _within_session(ct_min: int, p: Params) -> tuple[bool, bool]:
@@ -201,6 +292,9 @@ def _within_session(ct_min: int, p: Params) -> tuple[bool, bool]:
     return ct_min < cutoff, ct_min >= cutoff
 
 
+_PIVOT_COLS = ("pp", "r1", "s1", "r2", "s2", "r3", "s3")
+
+
 def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     o, h, l, c = df["open"].to_numpy(), df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
     ts = df.index
@@ -208,13 +302,15 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     volume_available = "volume" in df.columns
 
     alpha = alpha_trend(df, p, volume_available)
-    piv_h, piv_l = pivots(h, l, p.piv_left, p.piv_right)
-    diy_upper, diy_lower = diy_upper_lower(df["high"], df["low"], p.diy_period)
+    pivot_levels = classic_daily_pivots(df, p.session_tz).to_numpy()  # shape (n, 7), orden = _PIVOT_COLS
+
+    atrpoi = wilder_atr(df["high"], df["low"], df["close"], p.diy_atr_len)
+    demand_top, demand_bottom, supply_top, supply_bottom = supply_demand_zones(h, l, c, atrpoi, p)
+
     atr_risk = wilder_atr(df["high"], df["low"], df["close"], p.atr_len)
 
     slip = p.slippage_ticks * p.tick_size
 
-    last_ph = last_pl = np.nan
     last_day = None
     dtrades = 0
 
@@ -234,11 +330,6 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
             dtrades = 0
             last_day = day_id
         in_sess, is_eod = _within_session(ct_min, p)
-
-        if not np.isnan(piv_h[i]):
-            last_ph = piv_h[i]
-        if not np.isnan(piv_l[i]):
-            last_pl = piv_l[i]
 
         # ── posición abierta: chequear SL/TP (SL primero si empatan) ────
         if open_pos:
@@ -280,11 +371,19 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
             long_at = not np.isnan(alpha[i]) and c[i] > alpha[i] and l[i] < alpha[i]
             short_at = not np.isnan(alpha[i]) and c[i] < alpha[i] and h[i] > alpha[i]
 
-            long_piv = not np.isnan(last_pl) and l[i] < last_pl and c[i] > last_pl
-            short_piv = not np.isnan(last_ph) and h[i] > last_ph and c[i] < last_ph
+            long_piv = False
+            short_piv = False
+            for k in range(len(_PIVOT_COLS)):
+                lvl = pivot_levels[i, k]
+                if np.isnan(lvl):
+                    continue
+                if l[i] < lvl and c[i] > lvl:
+                    long_piv = True
+                if h[i] > lvl and c[i] < lvl:
+                    short_piv = True
 
-            long_diy = not np.isnan(diy_lower[i]) and l[i] < diy_lower[i] and c[i] > diy_lower[i]
-            short_diy = not np.isnan(diy_upper[i]) and h[i] > diy_upper[i] and c[i] < diy_upper[i]
+            long_diy = not np.isnan(demand_top[i]) and l[i] < demand_top[i] and c[i] > demand_top[i]
+            short_diy = not np.isnan(supply_bottom[i]) and h[i] > supply_bottom[i] and c[i] < supply_bottom[i]
 
             n_long = int(long_at) + int(long_piv) + int(long_diy)
             n_short = int(short_at) + int(short_piv) + int(short_diy)

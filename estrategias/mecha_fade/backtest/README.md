@@ -5,38 +5,51 @@ ifvg_sniper/upf_artillery: partición train/test en el tiempo, ranking
 por resultado consistente entre ambos tramos, filtro de mínimo de
 operaciones para no confiar en muestras chicas.
 
+## Definición de los 3 indicadores
+
+La estrategia original ("3 indicadores -AlphaTrend, Pivot y DIY-
+buscando cada que el precio haga una mecha por fuera, entro al cierre
+buscando el movimiento opuesto") tenía un hueco: no existe una fórmula
+pública estándar llamada "DIY". Se resolvió compartiendo el código del
+indicador real (`DIY Custom Strategy Builder [ZP] - v1`), y el usuario
+confirmó que de ahí **sólo usa la función de soportes/resistencias**
+(Supply/Demand Zone) — no el motor de ~35 "leading indicators" +
+confirmaciones que trae el resto del script. Con eso, los 3 indicadores
+quedaron así:
+
+- **AlphaTrend**: indicador externo, no forma parte del script "DIY".
+  Fórmula pública estándar (ratchet ATR/RSI o ATR/MFI).
+- **Pivot**: floor pivots clásicos "Traditional", calculados con el
+  High/Low/Close del día de trading **anterior** (P, R1-R3, S1-S3).
+- **DIY**: la función "Supply/Demand Zone" del script ZP — cajas de
+  soporte/resistencia ancladas a los últimos swing high/low, con un
+  buffer de ATR(50) y ruptura tipo BOS (la zona se desactiva cuando el
+  cierre la cruza).
+
+**Simplificación documentada sobre DIY**: el script original mantiene
+un historial de hasta 20 zonas por lado, con varias activas en
+simultáneo si no se solapan. Acá se sigue sólo la **más reciente** por
+lado (se reemplaza al aparecer un swing no solapado — más lejos que
+`diy_overlap_atr_mult × ATR` del punto medio de la zona vigente — y se
+desactiva al romperse). Para el propósito de esta señal alcanza con la
+zona vigente; no se replicó el historial completo.
+
 ## ⚠️ Puntos abiertos — confirmar antes de confiar en cualquier resultado
 
-Esta primera versión se armó a partir de la descripción de la
-estrategia ("3 indicadores -AlphaTrend, Pivot y DIY- buscando cada que
-el precio haga una mecha por fuera, entro al cierre buscando el
-movimiento opuesto"), pero quedaron 3 cosas sin definir que **cambian
-el resultado del backtest**:
+Quedan 2 cosas sin definir que **cambian el resultado del backtest**:
 
-1. **¿Qué es el indicador "DIY"?** No hay una fórmula pública estándar
-   con ese nombre, así que se implementó como **placeholder**: un canal
-   Donchian (máximo/mínimo de `diy_period` velas, default 20) actuando
-   como soporte/resistencia. Está aislado en una sola función
-   (`diy_upper_lower()` en `engine.py`, y el bloque "DIY" en el `.pine`)
-   para que sea fácil de reemplazar por el indicador real (fórmula,
-   código Pine, o el nombre exacto si es público) sin tocar el resto
-   del motor.
-2. **¿Los 3 indicadores tienen que coincidir a la vez, o alcanza con
+1. **¿Los 3 indicadores tienen que coincidir a la vez, o alcanza con
    cualquiera?** Se implementó configurable (`confluence_need`, 1 a 3),
    default = 1 (cualquiera de los 3 dispara), porque "cada que" sugiere
    que cada indicador funciona como gatillo individual. Si la idea real
    es "los 3 alineados", correr con `--confluence-need 3`.
-3. **Regla de salida (SL/TP).** No estaba especificada. Se usó el
+2. **Regla de salida (SL/TP).** No estaba especificada. Se usó el
    supuesto más natural para un fade de mecha: SL más allá del extremo
    de la mecha que disparó la señal (+ buffer en ATR, `sl_buffer_atr`)
    y TP a un múltiplo R de ese riesgo (`tp_r_mult`). Ambos son
    parámetros de barrido en `optimize.py` — si en realidad salís de otra
    forma (ej. al tocar el indicador contrario, o con trailing), avisame
    y se ajusta el motor.
-
-Nada de esto está escondido: mientras no se confirme, tratar cualquier
-resultado con el placeholder de DIY como **exploratorio**, no como
-validación de la estrategia real.
 
 ## Qué hace el motor
 
@@ -45,11 +58,15 @@ validación de la estrategia real.
   Usa RSI por default; si el CSV trae volumen y se activa
   `at_use_volume`, usa MFI en su lugar (igual al toggle "non-crypto
   pairs" del indicador original).
-- **Pivot**: pivotes altos/bajos no repintables (`ta.pivothigh`/`low`),
-  igual criterio que UPF Artillery — el último pivot alto/bajo
-  confirmado actúa como resistencia/soporte.
-- **DIY**: placeholder Donchian (ver arriba).
-- **Señal**: para cada nivel, "mecha por fuera + cierre adentro" ->
+- **Pivot**: floor pivots "Traditional" con el H/L/C del día de trading
+  anterior (`classic_daily_pivots()`), agrupando las velas del CSV por
+  fecha calendario en `session_tz` — aproximación razonable ya que no
+  hay un chart diario separado, sólo velas intradía (documentado, no
+  escondido). Cualquiera de los 7 niveles (P, R1-R3, S1-S3) puede
+  disparar la señal.
+- **DIY**: zona de Supply/Demand (`supply_demand_zones()`) — ver
+  definición arriba.
+- **Señal**: para cada nivel/zona, "mecha por fuera + cierre adentro" ->
   soporte roto momentáneamente = long, resistencia rota
   momentáneamente = short. Si en la misma vela hay señal long Y short
   (indicadores contradictorios), se descarta -no hay forma de saber
@@ -75,6 +92,7 @@ pip install -r requirements.txt
 
 python3 optimize.py tus_datos.csv
 python3 optimize.py tus_datos.csv --tp-r-mult 1.0,1.5,2.0 --confluence-need 1,2,3 --sl-buffer-atr 0.05,0.10,0.20
+python3 optimize.py tus_datos.csv --diy-swing-length 5,10,15 --diy-box-width 1.5,2.5,3.5
 ```
 
 El CSV es el export de TradingView ("Export chart data") con al menos
@@ -93,9 +111,15 @@ subir el profit factor.
 
 ## Limitaciones a tener en cuenta
 
-- Todo lo de la sección "Puntos abiertos" arriba.
+- Los 2 puntos abiertos de arriba (confluencia y regla de salida).
+- La simplificación de "una sola zona activa por lado" en DIY (ver
+  definición arriba).
+- Los floor pivots usan velas intradía agrupadas por fecha calendario
+  como aproximación de un día de trading "de verdad" — puede diferir
+  ligeramente de un pivot calculado con datos de sesión extendida o de
+  un chart diario nativo.
 - Si en la misma vela se tocan SL y TP, se asume que el SL se ejecuta
   primero (supuesto conservador, igual que en ifvg_sniper/upf_artillery).
 - El cierre por fin de sesión se aproxima al precio de cierre de esa vela.
-- Los pivotes se replican de forma vectorizada (ventana rodante) — no
-  repintan, coinciden con el comportamiento real de Pine.
+- Los pivotes/swings se replican de forma vectorizada (ventana rodante)
+  — no repintan, coinciden con el comportamiento real de Pine.
