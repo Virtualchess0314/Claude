@@ -108,6 +108,14 @@ class Params:
     # está seteado.
     only_source: str | None = None
 
+    # Aislar una sola dirección ('long'/'short'/None=ambas). Herramienta
+    # de análisis -por ej. DIY mostró asimetría consistente (demanda/
+    # soporte mejor que oferta/resistencia en las 5 temporalidades),
+    # esto permite testear "sólo long" de forma limpia sin que las
+    # señales de la otra dirección interfieran en la secuencia de
+    # trades (a diferencia de filtrar el trades_df después de simular).
+    only_direction: str | None = None
+
     # Filtro de frescura: sólo cuenta la PRIMERA mecha que testea cada
     # nivel/zona desde que "nació" -para AlphaTrend/Pivot, desde el
     # último flip de régimen (cambio de lado del precio); para DIY,
@@ -514,8 +522,8 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
             n_short = int(short_at) + int(short_piv) + int(short_diy)
 
             need = 1 if p.only_source else p.confluence_need
-            long_go = can_trade and n_long >= need and n_short < need
-            short_go = can_trade and n_short >= need and n_long < need
+            long_go = can_trade and n_long >= need and n_short < need and p.only_direction != "short"
+            short_go = can_trade and n_short >= need and n_long < need and p.only_direction != "long"
 
             if long_go or short_go:
                 is_long = long_go
