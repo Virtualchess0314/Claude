@@ -1,0 +1,63 @@
+Pedido del usuario: repetir el barrido de R-múltiplo (incluyendo RR
+negativo, 1:0.25 a 1:1) sobre la mejor configuración conocida
+(AlphaTrend solo, at_mult=2.0, sl_buffer_atr=1.0) pero en las 5
+temporalidades, no sólo 15m.
+
+## Resultado: la ventaja es específica de 15m
+
+  Timeframe   Mejor PF en test        ¿Se sostiene (train Y test >1)?
+  1m          0.97 (R=1.0)            No -nunca cruza 1.0 en test
+  2m          0.67 (R=0.9)            No
+  5m          0.92 (R=0.75)           No -nunca cruza 1.0 en test
+  15m         1.60 (R=2.5)            SÍ -cruza 1.0 desde R≈0.75, sube
+                                       de forma monótona hasta R=2.5
+  240m        -                       Sin datos -sólo 7 operaciones en
+                                       6.5 años, muestra inservible con
+                                       estos parámetros
+
+Detalle 15m (train/test 70/30, todo el dataset a la derecha):
+  R=0.25  train PF=0.96  test PF=0.85  | todo n=286 winrate=80.4% PF=0.92
+  R=0.33  train PF=1.08  test PF=1.04  | todo n=254 winrate=78.0% PF=1.07
+  R=0.75  train PF=1.27  test PF=1.34  | todo n=202 winrate=64.9% PF=1.30
+  R=1.0   train PF=1.21  test PF=1.41  | todo n=179 winrate=57.5% PF=1.27
+  R=1.5   train PF=1.32  test PF=1.39  | todo n=156 winrate=49.4% PF=1.34
+  R=2.0   train PF=1.51  test PF=1.34  | todo n=151 winrate=44.4% PF=1.45
+  R=2.5   train PF=1.40  test PF=1.60  | todo n=148 winrate=40.5% PF=1.47
+
+Detalle 5m (para contraste -mismo patrón que 1m/2m, dirección opuesta
+a 15m):
+  R=0.75  train PF=1.00  test PF=0.78  (mejor punto de test)
+  R=1.0   train PF=0.98  test PF=0.65
+  R=1.5   train PF=0.92  test PF=0.52
+  R=2.0   train PF=1.07  test PF=0.44
+  R=2.5   train PF=0.95  test PF=0.51
+  -> en 5m (y en 1m/2m) el PF de TEST empeora a medida que sube el R,
+     justo lo contrario de lo que pasa en 15m.
+
+## Por qué esto es una señal de alerta, no sólo un matiz
+
+Si "at_mult=2.0 + sl ancho" fuera una ventaja real y estructural del
+mercado (ej. "el precio necesita ese margen para respirar antes de
+revertir"), esperaríamos verla, aunque sea más débil, en varios
+timeframes -no en uno solo y en la DIRECCIÓN OPUESTA en los demás. Que
+1m/2m/5m se comporten de forma consistente entre sí (mejoran hasta
+cierto R chico y después empeoran) pero 15m se comporte totalmente
+distinto (mejora sin parar hasta R=2.5) sugiere que el resultado de 15m
+podría estar ajustado a esta ventana específica de 5 meses, no
+necesariamente algo que se vaya a repetir fuera de muestra futura.
+
+## Conclusión
+
+No se descarta la configuración de 15m -sigue siendo el resultado más
+sólido encontrado hasta ahora (PF consistente train/test, ~150-280
+operaciones)- pero baja la confianza de "ventaja de mercado real" a
+"posible ajuste a la muestra". Antes de operarlo en real, conviene:
+
+  1. Conseguir más historial de 15m (más de 5 meses) para ver si el
+     patrón se sostiene fuera de esta ventana.
+  2. Probar 10m o 20m derivados de 5m (agregando velas) para ver si
+     hay un "vecino" de 15m que también funcione -si sólo 15m
+     funciona y ni 10m ni 20m, es más sospechoso de sobreajuste.
+  3. No asumir que el mismo ajuste (at_mult=2.0, sl ancho) sirve para
+     operar en timeframes menores -en 1m/2m/5m habría que empezar de
+     cero la búsqueda, no reusar estos parámetros.

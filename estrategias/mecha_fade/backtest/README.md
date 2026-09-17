@@ -163,6 +163,15 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   `runs/2026-09-17_loss_postmortem.txt`). Reemplaza al hallazgo previo
   de `sl_buffer_atr=0.2-0.3` (PF~1.0-1.1) — el stop original era
   demasiado ajustado.
+- **⚠️ Esa ventaja es específica de 15m, no se generaliza.** Repetido
+  el mismo barrido de R-múltiplo (incluyendo RR negativo, 1:0.25 a
+  1:1) en 1m/2m/5m: el profit factor de test NUNCA cruza 1.0 en ningún
+  R probado, y encima mejora en la dirección OPUESTA a 15m (en 15m el
+  PF sube con R hasta 2.5; en 1m/2m/5m baja). 240m no tiene muestra
+  suficiente (7 operaciones en 6.5 años). Esto baja la confianza de
+  "ventaja de mercado real" a "posible ajuste a esta ventana de 5
+  meses de 15m" — ver `runs/2026-09-17_r_multiple_by_timeframe.txt`
+  antes de operar esta configuración en real.
 - **Backtesting por sesión**: la sesión NY (12-17 ET) rinde
   sistemáticamente mejor y el overlap Londres/NY (08-12 ET)
   sistemáticamente peor, de acuerdo en las 5 temporalidades — patrón
