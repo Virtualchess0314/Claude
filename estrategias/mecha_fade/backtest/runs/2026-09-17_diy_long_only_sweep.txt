@@ -1,0 +1,32 @@
+Seguimiento de runs/2026-09-17_long_vs_short.txt: DIY mostró una
+asimetría consistente (demanda/soporte mejor que oferta/resistencia en
+las 5 temporalidades, aunque ambos lados perdedores con los defaults).
+Se barrieron los parámetros propios de DIY (diy_swing_length,
+diy_box_width) cruzados con tp_r_mult y sl_buffer_atr, aislando SÓLO
+el lado long (demanda/soporte) con `only_direction='long'`, para ver
+si esa asimetría escondía una ventaja real que los defaults no
+mostraban.
+
+## Resultado: negativo
+
+  5m:  384 combinaciones evaluadas -> sólo 1 cruza PF>1 en train Y test
+       (sw=15, bw=2.5, tp=1.0, slb=0.2: train PF=1.03 n=57, test PF=1.32 n=26)
+  15m: 376 combinaciones evaluadas -> sólo 1 cruza PF>1 en train Y test
+       (sw=10, bw=2.5, tp=2.5, slb=0.1: train PF=1.05 n=50, test PF=1.16 n=28)
+
+Con 760 combinaciones probadas en total, encontrar apenas 2 que cruzan
+apenas por encima de 1.0 (train PF 1.03-1.05, muy al límite) es
+exactamente lo que se espera por puro azar al probar tantas
+combinaciones (múltiples comparaciones) -no es evidencia de una
+ventaja real. Ninguna de las dos tiene además muestra grande (50-57
+train, 26-28 test).
+
+## Conclusión
+
+DIY (Supply/Demand Zone), incluso aislando el lado que mostraba mejor
+comportamiento relativo (demanda/soporte) y barriendo sus parámetros
+propios, NO tiene ventaja real ni en 5m ni en 15m. Se cierra esta
+línea de investigación: de los 3 indicadores, DIY es consistentemente
+el más débil (ver también runs/2026-09-17_source_quality.txt), y la
+asimetría long>short que mostraba es real pero insuficiente para
+convertirlo en una señal operable por sí sola.
