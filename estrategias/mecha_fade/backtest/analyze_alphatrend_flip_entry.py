@@ -16,10 +16,17 @@ pierde- así que el resultado es la mezcla de ambos casos, no sólo el caso
 Mecánica exacta (igual que engine.simulate(), reutilizando sus mismas
 funciones y modelo de costos, para que el resultado sea comparable con
 el resto de la estrategia):
-  - Señal: flip genuino de AlphaTrend (cruce de cierre contra la línea,
-    tramo resultante >= --min-segment-bars velas -filtra whipsaw).
-  - Entrada: a mercado al cierre de la vela del flip, a favor del nuevo
-    régimen.
+  - Señal: flip de AlphaTrend (cruce de cierre contra la línea),
+    confirmado de forma CAUSAL: recién se toma como señal cuando el
+    nuevo régimen se sostuvo `--confirm-bars` velas seguidas (default 1
+    = entrada inmediata en la vela del flip crudo, sin demora). OJO:
+    versiones anteriores de este script usaban
+    analyze_alphatrend_kills_pivot.filter_genuine_flips(), que decide si
+    un flip "es genuino" mirando cuánto dura el tramo COMPLETO hasta el
+    próximo flip -esa información no existe todavía en el momento de
+    entrar (look-ahead bias). Se reemplazó por esta versión causal.
+  - Entrada: a mercado al cierre de la vela de confirmación, a favor del
+    nuevo régimen.
   - SL: nivel del Pivot Point SuperTrend en ese momento, +/- buffer de
     ATR (--sl-buffer-atr).
   - Salida: TP a un múltiplo de R (--tp-r-mult) o trailing sobre
@@ -41,12 +48,39 @@ import sys
 import numpy as np
 import pandas as pd
 
-from analyze_alphatrend_kills_pivot import detect_alphatrend_flips, filter_genuine_flips
+from analyze_alphatrend_kills_pivot import detect_alphatrend_flips
 from data import load_csv
 from engine import Params, _within_session, alpha_trend, pivot_point_supertrend, summarize, wilder_atr
 
 
-def simulate_flip_entries(df: pd.DataFrame, p: Params, min_segment_bars: int, min_risk_ticks: float) -> tuple[pd.DataFrame, dict]:
+def causal_confirmed_flips(regime: np.ndarray, confirm_bars: int) -> np.ndarray:
+    """
+    Alternativa CAUSAL a analyze_alphatrend_kills_pivot.filter_genuine_flips
+    (que decide si un flip es "genuino" mirando cuánto dura el tramo
+    completo hasta el PRÓXIMO flip -información que no existe todavía en
+    el momento de entrar). Acá el flip recién se confirma cuando el nuevo
+    régimen se sostuvo `confirm_bars` velas seguidas contando desde la del
+    flip -sólo usa información ya conocida en cada vela. confirm_bars=1 =
+    entrada inmediata en la vela del flip crudo, sin ninguna demora.
+    """
+    n = len(regime)
+    flips = []
+    prev = None
+    flip_bar = None
+    for i in range(n):
+        if np.isnan(regime[i]):
+            prev = None
+            flip_bar = None
+            continue
+        if prev is not None and regime[i] != prev:
+            flip_bar = i
+        if flip_bar is not None and i - flip_bar == confirm_bars - 1:
+            flips.append(i)
+        prev = regime[i]
+    return np.array(flips, dtype=int)
+
+
+def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, min_risk_ticks: float) -> tuple[pd.DataFrame, dict]:
     h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
     ts = df.index
     n = len(df)
@@ -57,8 +91,8 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, min_segment_bars: int, mi
     atr_risk = wilder_atr(df["high"], df["low"], df["close"], p.atr_len)
     slip = p.slippage_ticks * p.tick_size
 
-    regime, flips_raw = detect_alphatrend_flips(df, p, volume_available)
-    flips = filter_genuine_flips(regime, flips_raw, n, min_segment_bars)
+    regime, _flips_raw = detect_alphatrend_flips(df, p, volume_available)
+    flips = causal_confirmed_flips(regime, confirm_bars)
     flip_set = set(flips.tolist())
 
     last_day = None
@@ -161,7 +195,8 @@ def main():
     ap.add_argument("--sl-buffer-atr", type=float, default=0.10)
     ap.add_argument("--tp-r-mult", type=float, default=2.0)
     ap.add_argument("--trailing-exit-source", choices=["at", "piv"], default=None)
-    ap.add_argument("--min-segment-bars", type=int, default=3)
+    ap.add_argument("--confirm-bars", type=int, default=1,
+                     help="velas que el nuevo régimen debe sostenerse antes de confirmar la entrada (1=inmediato, causal)")
     ap.add_argument("--min-risk-ticks", type=float, default=4.0)
     ap.add_argument("--tick-size", type=float, default=0.25)
     ap.add_argument("--max-risk-usd", type=float, default=150.0)
@@ -188,8 +223,8 @@ def main():
     print(f"Datos: {len(df)} velas · train={len(df_train)} ({df_train.index[0]} -> {df_train.index[-1]}) "
           f"· test={len(df_test)} ({df_test.index[0]} -> {df_test.index[-1]})", file=sys.stderr)
 
-    _, s_train = simulate_flip_entries(df_train, p, args.min_segment_bars, args.min_risk_ticks)
-    _, s_test = simulate_flip_entries(df_test, p, args.min_segment_bars, args.min_risk_ticks)
+    _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.min_risk_ticks)
+    _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.min_risk_ticks)
 
     for label, s in [("TRAIN", s_train), ("TEST", s_test)]:
         print(f"\n{label}: trades={s['trades']}  win_rate={s['win_rate']*100:.1f}%  "

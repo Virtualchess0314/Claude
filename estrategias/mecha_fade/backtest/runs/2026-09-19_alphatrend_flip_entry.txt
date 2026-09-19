@@ -96,3 +96,31 @@ continuación).
 
 Implementación: `analyze_alphatrend_flip_entry.py`
     python3 analyze_alphatrend_flip_entry.py datos.csv --sl-buffer-atr 0.25 --trailing-exit-source at
+
+## ⚠️ CORRECCIÓN (mismo día): el "Resultado 3" de arriba era inválido
+
+El filtro usado para decidir qué flips entran al backtest
+(`filter_genuine_flips`, heredado de analyze_alphatrend_kills_pivot.py)
+decide si un flip es "genuino" mirando cuánto dura el tramo COMPLETO
+hasta el PRÓXIMO flip -esa información no existe todavía en el momento
+de entrar. Es look-ahead bias: el backtest se beneficiaba de saber el
+futuro para filtrar de antemano las señales malas.
+
+Se reemplazó por `causal_confirmed_flips()`: confirma el flip recién
+cuando el nuevo régimen se sostuvo N velas seguidas (`--confirm-bars`,
+default 1 = entrada inmediata sin demora, causal). Se repitió el mismo
+barrido (sl_buffer_atr x tipo de salida x 4 temporalidades, 90 combos
+con muestra suficiente): **0/90 pasan train_pf>1 Y test_pf>1** (antes
+eran 5/88, con el combo sl_buf=0.25+trailing_at "ganando" en 1m/2m/5m
+simultáneamente). Con el filtro corregido, ese mismo combo da PF de test
+muy por debajo de 1 en las tres temporalidades (0.56-0.69).
+
+Conclusión revisada: la "ventaja consistente en 1m/2m/5m" del Resultado
+3 era enteramente un artefacto del look-ahead bias, no una ventaja real.
+Con el filtro causal (`confirm_bars=1`, entrada inmediata al flip crudo,
+como pidió el usuario -"solo alpha trend", sin filtros extra), no
+aparece ninguna combinación con ventaja consistente entre train y test.
+Queda pendiente probar si confirmar el flip con más de 1 vela
+(`--confirm-bars 2/3/5/8`, sigue siendo causal: sólo espera a que el
+régimen se sostenga antes de entrar, no mira el futuro) rescata algo -en
+curso al momento de escribir esto.
