@@ -80,6 +80,140 @@ def causal_confirmed_flips(regime: np.ndarray, confirm_bars: int) -> np.ndarray:
     return np.array(flips, dtype=int)
 
 
+def pivot_confirmation_bars(regime: np.ndarray, piv_trend: np.ndarray) -> np.ndarray:
+    """
+    Señal alternativa a causal_confirmed_flips(): en vez de entrar al
+    flip crudo de AlphaTrend, esperar a que el PIVOT MISMO confirme -el
+    pivot viejo (de color contrario) muere y nace uno nuevo del color de
+    la tendencia actual (piv_trend pasa a igualar regime). Es justo el
+    evento que runs/2026-09-19_pivot_flip_definition_fix.txt encontró
+    asociado casi perfectamente a los recorridos grandes (mediana
+    4.5-5R, 99-100% llega a 1R) vs los chicos (mediana 0.5-0.65R) del
+    pivot que nunca confirma. Es causal por construcción: sólo usa el
+    valor de piv_trend en la vela actual y la anterior.
+    """
+    n = len(regime)
+    bars = []
+    for i in range(1, n):
+        if np.isnan(regime[i]) or np.isnan(piv_trend[i]) or np.isnan(piv_trend[i - 1]):
+            continue
+        if piv_trend[i] != piv_trend[i - 1] and piv_trend[i] == regime[i]:
+            bars.append(i)
+    return np.array(bars, dtype=int)
+
+
+def simulate_pivot_confirmation_entries(df: pd.DataFrame, p: Params, sl_buffer_atr: float) -> tuple[pd.DataFrame, dict]:
+    """
+    Entra recién cuando el Pivot Point SuperTrend confirma la tendencia
+    actual de AlphaTrend (ver pivot_confirmation_bars). En ese momento
+    el pivot recién nacido SÍ queda del lado correcto del precio (a
+    diferencia del pivot viejo al momento del flip crudo -ver
+    runs/2026-09-19_alphatrend_regime_fix.txt), así que el SL se apoya
+    directo en él (con un pequeño buffer de ATR), en vez de usar ATR
+    puro.
+    """
+    h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
+    ts = df.index
+    n = len(df)
+    volume_available = "volume" in df.columns
+
+    alpha = alpha_trend(df, p, volume_available)
+    piv_line, piv_trend = pivot_point_supertrend(df, p)
+    atr_risk = wilder_atr(df["high"], df["low"], df["close"], p.atr_len)
+    slip = p.slippage_ticks * p.tick_size
+
+    regime, _ = detect_alphatrend_flips(df, p, volume_available)
+    flips = pivot_confirmation_bars(regime, piv_trend)
+    flip_set = set(flips.tolist())
+
+    last_day = None
+    dtrades = 0
+    open_pos = False
+    is_long = False
+    entry_price = entry_bar = None
+    sl = tp = np.nan
+    qty = 0
+    trades = []
+
+    for i in range(n):
+        local = ts[i].tz_convert(p.session_tz)
+        ct_min = local.hour * 60 + local.minute
+        day_id = local.date()
+        if day_id != last_day:
+            dtrades = 0
+            last_day = day_id
+        in_sess, is_eod = _within_session(ct_min, p)
+
+        if open_pos:
+            hit_sl = (l[i] <= sl) if is_long else (h[i] >= sl)
+            hit_trail = hit_tp = False
+            if p.trailing_exit_source == "regime":
+                if not np.isnan(regime[i]):
+                    hit_trail = (regime[i] == -1.0) if is_long else (regime[i] == 1.0)
+            elif p.trailing_exit_source == "pivot_reflip":
+                # sale apenas el PIVOT (no la nube) vuelve a flipear en contra
+                if not np.isnan(piv_trend[i]):
+                    hit_trail = (piv_trend[i] == -1.0) if is_long else (piv_trend[i] == 1.0)
+            else:
+                hit_tp = (h[i] >= tp) if is_long else (l[i] <= tp)
+
+            exit_price = exit_reason = None
+            if hit_sl:
+                exit_price = sl - slip if is_long else sl + slip
+                exit_reason = "SL"
+            elif hit_trail:
+                exit_price = c[i] - slip if is_long else c[i] + slip
+                exit_reason = "TRAIL"
+            elif hit_tp:
+                exit_price = tp
+                exit_reason = "TP"
+            elif is_eod:
+                exit_price = c[i] - slip if is_long else c[i] + slip
+                exit_reason = "EOD"
+
+            if exit_price is not None:
+                pnl = (exit_price - entry_price) * qty * p.point_value_usd * (1 if is_long else -1)
+                pnl -= p.commission_round_turn_usd * qty
+                risk_pts = abs(entry_price - sl)
+                trades.append({
+                    "entry_time": ts[entry_bar], "exit_time": ts[i],
+                    "direction": "long" if is_long else "short",
+                    "entry": entry_price, "exit": exit_price, "sl": sl, "reason": exit_reason,
+                    "qty": qty, "pnl_usd": pnl,
+                    "r_multiple": pnl / (risk_pts * qty * p.point_value_usd) if risk_pts and risk_pts > 0 else np.nan,
+                    "bars_held": i - entry_bar,
+                })
+                open_pos = False
+
+        if not open_pos and i in flip_set and in_sess and dtrades < p.max_trades_per_day:
+            level = piv_line[i]
+            atr_i = atr_risk[i]
+            if np.isnan(level) or np.isnan(atr_i) or atr_i <= 0:
+                continue
+            is_long = regime[i] == 1.0
+            entry_signal_price = c[i]
+            entry_price = entry_signal_price + slip if is_long else entry_signal_price - slip
+            entry_bar = i
+            buffer = sl_buffer_atr * atr_i
+            if is_long:
+                sl = level - buffer
+                risk_pts = entry_price - sl
+                tp = entry_price + risk_pts * p.tp_r_mult
+            else:
+                sl = level + buffer
+                risk_pts = sl - entry_price
+                tp = entry_price - risk_pts * p.tp_r_mult
+            if risk_pts <= 0:
+                continue  # no debería pasar (el pivot ya confirmó del lado correcto), pero por las dudas
+            qty = min(p.max_qty, int(p.max_risk_usd / (risk_pts * p.point_value_usd))) if risk_pts > 0 else 0
+            if qty > 0:
+                open_pos = True
+                dtrades += 1
+
+    trades_df = pd.DataFrame(trades)
+    return trades_df, summarize(trades_df, volume_available)
+
+
 def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr_mult: float,
                            require_opposite_color_pivot: bool = False) -> tuple[pd.DataFrame, dict]:
     h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
@@ -198,14 +332,17 @@ def main():
     ap.add_argument("--piv-atr-period", type=int, default=10)
     ap.add_argument("--piv-atr-factor", type=float, default=3.0)
     ap.add_argument("--atr-len", type=int, default=14)
-    ap.add_argument("--sl-atr-mult", type=float, default=2.0, help="SL = entry -/+ sl_atr_mult x ATR (no depende del pivot)")
+    ap.add_argument("--sl-atr-mult", type=float, default=2.0,
+                     help="SL = entry -/+ sl_atr_mult x ATR (no depende del pivot); con --pivot-confirmation es el buffer sobre el pivot recién nacido (usar valores chicos, ej 0.1-0.5)")
     ap.add_argument("--tp-r-mult", type=float, default=2.0)
-    ap.add_argument("--trailing-exit-source", choices=["at", "piv", "regime"], default=None,
-                     help="'at'/'piv': cierre cruza la línea (ruidoso). 'regime': espera al próximo flip real de régimen (recomendado, mismo criterio que la entrada)")
+    ap.add_argument("--trailing-exit-source", choices=["at", "piv", "regime", "pivot_reflip"], default=None,
+                     help="'at'/'piv': cierre cruza la línea (ruidoso). 'regime': espera al próximo flip real de nube. 'pivot_reflip' (sólo con --pivot-confirmation): sale cuando el PIVOT vuelve a flipear en contra")
     ap.add_argument("--confirm-bars", type=int, default=1,
                      help="velas que el nuevo régimen debe sostenerse antes de confirmar la entrada (1=inmediato, causal)")
     ap.add_argument("--require-opposite-color-pivot", action="store_true",
                      help="sólo entra si, al momento del flip, el Pivot Point SuperTrend es de color CONTRARIO a la nube nueva (ver runs/2026-09-19_post_kill_runup.txt)")
+    ap.add_argument("--pivot-confirmation", action="store_true",
+                     help="en vez de entrar al flip crudo de AlphaTrend, esperar a que el PIVOT confirme (nazca del color de la tendencia actual) -ver runs/2026-09-19_pivot_flip_definition_fix.txt")
     ap.add_argument("--tick-size", type=float, default=0.25)
     ap.add_argument("--max-risk-usd", type=float, default=150.0)
     ap.add_argument("--point-value-usd", type=float, default=2.0)
@@ -231,8 +368,12 @@ def main():
     print(f"Datos: {len(df)} velas · train={len(df_train)} ({df_train.index[0]} -> {df_train.index[-1]}) "
           f"· test={len(df_test)} ({df_test.index[0]} -> {df_test.index[-1]})", file=sys.stderr)
 
-    _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot)
-    _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot)
+    if args.pivot_confirmation:
+        _, s_train = simulate_pivot_confirmation_entries(df_train, p, args.sl_atr_mult)
+        _, s_test = simulate_pivot_confirmation_entries(df_test, p, args.sl_atr_mult)
+    else:
+        _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot)
+        _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot)
 
     for label, s in [("TRAIN", s_train), ("TEST", s_test)]:
         print(f"\n{label}: trades={s['trades']}  win_rate={s['win_rate']*100:.1f}%  "

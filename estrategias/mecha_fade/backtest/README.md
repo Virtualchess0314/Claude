@@ -285,10 +285,22 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   casi nunca pasa de 1R (17-28%, mediana 0.5-0.65R). Consistente en las
   5 temporalidades. Esto valida el mecanismo que el usuario tenía en
   mente: el pivot confirmando la tendencia ES la señal de que el
-  movimiento va a correr. Abre una línea de entrada más precisa, todavía
-  no backtesteada como regla operable: entrar recién cuando el PIVOT
-  TAMBIÉN FLIPEA (no al flip crudo de AlphaTrend). Ver
-  `runs/2026-09-19_pivot_flip_definition_fix.txt`.
+  movimiento va a correr. Ver `runs/2026-09-19_pivot_flip_definition_fix.txt`.
+- **⚠️ Pero entrar recién cuando el pivot confirma NO funciona como
+  regla operable (`--pivot-confirmation`) — CERRADO.** Backtesteado con
+  SL apoyado en el pivot recién nacido: 0/35 combinaciones pasan en 1m
+  (única temporalidad con muestra suficiente; 2m/5m/15m/240m casi sin
+  operaciones porque el motor sólo aguanta una posición a la vez y estas
+  operaciones duran ~59 velas, similar al intervalo entre señales).
+  Motivo de fondo: el MFE grande (bullet anterior) se mide desde el flip
+  ORIGINAL de AlphaTrend; para cuando el pivot confirma, parte del
+  movimiento ya pasó, y el riesgo nuevo (más chico) no compensa lo que
+  queda por delante. "El episodio completo fue grande" no es lo mismo
+  que "entrar en la confirmación da un movimiento grande desde ahí". El
+  hallazgo que SÍ sigue en pie es el del bullet de arriba: filtrar por
+  color de pivot AL MOMENTO del flip (sin esperar confirmación) — ese
+  entra al principio del movimiento, no después. Ver
+  `runs/2026-09-19_pivot_confirmation_entry.txt`.
 
 ## Qué mirar en el resultado
 
