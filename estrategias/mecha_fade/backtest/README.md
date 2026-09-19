@@ -315,6 +315,18 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   investigación sigue siendo el ya validado arriba: entrar con filtro
   de color de pivot + salida por TP fijo o por reversión de la NUBE
   (no del pivot). Ver `runs/2026-09-19_pivot_confirms_as_exit.txt`.
+- **⚠️ Confirmación de la temporalidad siguiente — sin evidencia
+  suficiente, CERRADO.** Idea del usuario: con la entrada ya validada,
+  mirar la temporalidad más alta (1m→2m, 2m→5m, 5m→15m, 15m→240m) y dar
+  más recorrido (sin TP, trailing por reversión de nube) si el precio
+  también supera su nube ahí; si no, TP conservador. Resultado: 3/56
+  combinaciones (5.4%, apenas sobre el azar), las 3 concentradas en un
+  solo par (5m confirmado por 15m, muestra chica de 21-24 operaciones,
+  train mucho mejor que test — perfil de sobreajuste). El par con más
+  muestra y mejor resultado sin este filtro (1m) da 0/16 acá — agregar
+  la confirmación de temporalidad alta no mejora nada, empeora el
+  resultado ya conocido. Ver `runs/2026-09-19_htf_confirmation.txt` y
+  `analyze_htf_confirmation.py`.
 
 ## Qué mirar en el resultado
 

@@ -1,0 +1,63 @@
+Idea del usuario: si hay una entrada confirmada (flip de AlphaTrend con
+pivot de color contrario -ya validado), mirar la temporalidad SIGUIENTE
+(más alta): si el precio también supera la nube ahí (buscando matar su
+propio pivot), darle más recorrido a la posición; si no, cerrarla más
+rápido.
+
+Implementación (analyze_htf_confirmation.py): entrada igual a la ya
+validada. Mientras la posición está abierta, se alinea de forma CAUSAL
+(sólo velas altas ya cerradas) el régimen de AlphaTrend de la
+temporalidad alta. Antes de que esa temporalidad alta confirme
+(coincida con la dirección de la posición): TP conservador
+(--tp-r-mult-pre). Apenas confirma: se saca el TP y se deja correr con
+trailing por reversión del régimen de la temporalidad BAJA.
+
+Se probaron los 4 pares "consecutivos" naturales con datos reales (sin
+resamplear): 1m→2m, 2m→5m, 5m→15m, 15m→240m.
+
+## Resultado: señal débil y concentrada en un solo par
+
+Barrido: sl_atr_mult (1/1.5/2/3) x tp_r_mult_pre (0.5/1/1.5/2) x 4 pares
+= 56 combinaciones con muestra suficiente (train>=15, test>=8).
+
+  Par         combos   pasan train_pf>1 y test_pf>1
+  1m->2m      16       0
+  2m->5m      16       0
+  5m->15m     16       3
+  15m->240m   8        0
+
+**3/56 (5.4%)**, apenas por encima del ~5% esperable por azar, y las 3
+concentradas en el MISMO par (5m confirmado por 15m) con el mismo
+sl_atr_mult=3.0 (varía sólo tp_pre: 1.0/1.5/2.0). Mejor caso: train
+PF=2.53 (n=21, +0.59R), test PF=1.22 (n=24, +0.05R) -train muy vistoso
+pero test bastante más flojo, y muestra chica en ambos lados.
+
+El par con más muestra y el que mejor funcionaba SIN este filtro
+(1m entrada, ver runs/2026-09-19_opposite_color_pivot_filter.txt,
+15/90 combos) da **0/16** acá -agregar la confirmación de la
+temporalidad alta no lo mejora, más bien lo empeora (el TP conservador
+"pre-confirmación" corta operaciones que con la salida simple
+(TP fijo o reversión de nube) sí funcionaban).
+
+## Interpretación
+
+No hay evidencia sólida de que "mirar la temporalidad siguiente para
+decidir si dar más recorrido" mejore el resultado ya conocido. El único
+resultado positivo (5m→15m) tiene muestra chica (21-24 operaciones) y
+train mucho mejor que test -perfil típico de sobreajuste, no de ventaja
+real. No se repite en ningún otro par, ni siquiera en el más parecido
+en escala relativa (15m→240m, que tampoco pasa ninguno de sus 8 combos).
+
+## Conclusión
+
+Se cierra esta variante como "sin evidencia suficiente" -no se
+recomienda operarla. El mejor resultado de todo el proyecto sigue
+siendo el ya validado: entrar al flip de AlphaTrend con pivot de color
+contrario, sin filtro de temporalidad superior, con salida por TP fijo
+o reversión de la nube de la MISMA temporalidad (15/90 combos, 4
+temporalidades). Si se quiere insistir con la idea multi-temporalidad,
+habría que ampliar mucho la muestra (más meses de datos) antes de sacar
+conclusiones del par 5m→15m.
+
+Implementación: `analyze_htf_confirmation.py`
+    python3 analyze_htf_confirmation.py datos_bajos.csv datos_altos.csv --bar-seconds-high 900
