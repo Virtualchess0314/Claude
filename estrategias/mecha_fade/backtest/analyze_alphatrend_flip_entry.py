@@ -1,43 +1,43 @@
 """
 Backtest de una entrada DISTINTA a la mecha_fade: en vez de esperar el
 fade (mecha + cierre adentro), entra directo al FLIP de régimen de
-AlphaTrend, a favor de la nueva tendencia. El SL se apoya en el nivel del
-Pivot Point SuperTrend vigente al momento del flip (el nivel que el
-precio está a punto de romper), igual que en analyze_post_kill_runup.py.
+AlphaTrend, a favor de la nueva tendencia.
 
 Ojo con la expectativa: analyze_post_kill_runup.py mostró que "matar" el
 pivot (nunca volverlo a tocar) es la firma de los tramos CHICOS (mediana
-~0.5R), y que los tramos grandes (mediana ~2R) son los que retestean el
-pivot antes de seguir. Acá no filtramos por eso -se entra a TODOS los
-flips genuinos, dejando que el stop/TP reales decidan quién gana y quién
-pierde- así que el resultado es la mezcla de ambos casos, no sólo el caso
-"lindo" de un único ejemplo visual.
+~0.5-0.6R), y que los tramos grandes (mediana ~3.5-4R) son los que
+retestean el pivot antes de seguir. Acá no filtramos por eso -se entra a
+TODOS los flips, dejando que el stop/TP reales decidan quién gana y
+quién pierde- así que el resultado es la mezcla de ambos casos, no sólo
+el caso "lindo" de un único ejemplo visual.
 
-Mecánica exacta (igual que engine.simulate(), reutilizando sus mismas
-funciones y modelo de costos, para que el resultado sea comparable con
-el resto de la estrategia):
-  - Señal: flip de AlphaTrend (cruce de cierre contra la línea),
-    confirmado de forma CAUSAL: recién se toma como señal cuando el
-    nuevo régimen se sostuvo `--confirm-bars` velas seguidas (default 1
-    = entrada inmediata en la vela del flip crudo, sin demora). OJO:
-    versiones anteriores de este script usaban
-    analyze_alphatrend_kills_pivot.filter_genuine_flips(), que decide si
-    un flip "es genuino" mirando cuánto dura el tramo COMPLETO hasta el
-    próximo flip -esa información no existe todavía en el momento de
-    entrar (look-ahead bias). Se reemplazó por esta versión causal.
+Mecánica (reutiliza el modelo de costos de engine.Params para que el
+resultado sea comparable con el resto de la estrategia):
+  - Señal: flip de AlphaTrend, definido por PENDIENTE de la línea
+    (AlphaTrend[i] vs AlphaTrend[i-2] -así colorea la nube el indicador
+    público real, ver detect_alphatrend_flips), confirmado de forma
+    CAUSAL: recién se toma como señal cuando el nuevo régimen se
+    sostuvo `--confirm-bars` velas seguidas (default 1 = entrada
+    inmediata en la vela del flip crudo, sin demora).
   - Entrada: a mercado al cierre de la vela de confirmación, a favor del
     nuevo régimen.
-  - SL: nivel del Pivot Point SuperTrend en ese momento, +/- buffer de
-    ATR (--sl-buffer-atr).
-  - Salida: TP a un múltiplo de R (--tp-r-mult) o trailing sobre
-    AlphaTrend/Pivot (--trailing-exit-source), cierre de sesión (EOD),
-    lo que llegue primero.
+  - SL: ATR puro (entry -/+ `--sl-atr-mult` x ATR). NO se apoya en el
+    Pivot Point SuperTrend: con flips ahora limpios y espaciados
+    (~30-40 velas de duración típica), el pivot vigente frecuentemente
+    queda del lado equivocado del precio (su propio trend interno no
+    cambió al mismo tiempo que AlphaTrend) -da riesgo negativo/sin
+    sentido en ~46% de los flips. Ver runs/2026-09-19_alphatrend_regime_fix.txt.
+  - Salida: TP a un múltiplo de R (--tp-r-mult), trailing sobre
+    AlphaTrend/Pivot por VALOR de línea (--trailing-exit-source at/piv,
+    ruidoso, no recomendado) o por RÉGIMEN (--trailing-exit-source
+    regime, recomendado: cierra recién cuando el mismo criterio de
+    pendiente vuelve a flipear en contra), o cierre de sesión (EOD).
   - Costos: comisión + slippage igual que engine.Params.
   - Partición train/test 70/30 en el tiempo, igual que optimize.py.
 
 Uso:
     python3 analyze_alphatrend_flip_entry.py datos.csv
-    python3 analyze_alphatrend_flip_entry.py datos.csv --trailing-exit-source piv --sl-buffer-atr 0.5
+    python3 analyze_alphatrend_flip_entry.py datos.csv --sl-atr-mult 3.0 --trailing-exit-source regime
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ def causal_confirmed_flips(regime: np.ndarray, confirm_bars: int) -> np.ndarray:
     return np.array(flips, dtype=int)
 
 
-def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, min_risk_ticks: float) -> tuple[pd.DataFrame, dict]:
+def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr_mult: float) -> tuple[pd.DataFrame, dict]:
     h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
     ts = df.index
     n = len(df)
@@ -118,7 +118,14 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, min_ri
             hit_sl = (l[i] <= sl) if is_long else (h[i] >= sl)
             hit_trail = False
             hit_tp = False
-            if p.trailing_exit_source is not None:
+            if p.trailing_exit_source == "regime":
+                # Salida por el MISMO criterio de régimen que la entrada
+                # (pendiente de AlphaTrend, no "cierre vs línea" -ese
+                # criterio es ruidoso, ver detect_alphatrend_flips):
+                # cierra apenas el régimen vuelve a flipear en contra.
+                if not np.isnan(regime[i]):
+                    hit_trail = (regime[i] == -1.0) if is_long else (regime[i] == 1.0)
+            elif p.trailing_exit_source is not None:
                 trail_line = alpha[i] if p.trailing_exit_source == "at" else piv_line[i]
                 if not np.isnan(trail_line):
                     hit_trail = (c[i] < trail_line) if is_long else (c[i] > trail_line)
@@ -154,25 +161,21 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, min_ri
                 open_pos = False
 
         if not open_pos and i in flip_set and in_sess and dtrades < p.max_trades_per_day:
-            level = piv_line[i]
             atr_i = atr_risk[i]
-            if np.isnan(level) or np.isnan(atr_i) or atr_i <= 0:
+            if np.isnan(atr_i) or atr_i <= 0:
                 continue
             is_long = regime[i] == 1.0
             entry_signal_price = c[i]
             entry_price = entry_signal_price + slip if is_long else entry_signal_price - slip
             entry_bar = i
-            buffer = p.sl_buffer_atr * atr_i
             if is_long:
-                sl = level - buffer
+                sl = entry_price - sl_atr_mult * atr_i
                 risk_pts = entry_price - sl
                 tp = entry_price + risk_pts * p.tp_r_mult
             else:
-                sl = level + buffer
+                sl = entry_price + sl_atr_mult * atr_i
                 risk_pts = sl - entry_price
                 tp = entry_price - risk_pts * p.tp_r_mult
-            if risk_pts < min_risk_ticks * p.tick_size:
-                continue
             qty = min(p.max_qty, int(p.max_risk_usd / (risk_pts * p.point_value_usd))) if risk_pts > 0 else 0
             if qty > 0:
                 open_pos = True
@@ -192,12 +195,12 @@ def main():
     ap.add_argument("--piv-atr-period", type=int, default=10)
     ap.add_argument("--piv-atr-factor", type=float, default=3.0)
     ap.add_argument("--atr-len", type=int, default=14)
-    ap.add_argument("--sl-buffer-atr", type=float, default=0.10)
+    ap.add_argument("--sl-atr-mult", type=float, default=2.0, help="SL = entry -/+ sl_atr_mult x ATR (no depende del pivot)")
     ap.add_argument("--tp-r-mult", type=float, default=2.0)
-    ap.add_argument("--trailing-exit-source", choices=["at", "piv"], default=None)
+    ap.add_argument("--trailing-exit-source", choices=["at", "piv", "regime"], default=None,
+                     help="'at'/'piv': cierre cruza la línea (ruidoso). 'regime': espera al próximo flip real de régimen (recomendado, mismo criterio que la entrada)")
     ap.add_argument("--confirm-bars", type=int, default=1,
                      help="velas que el nuevo régimen debe sostenerse antes de confirmar la entrada (1=inmediato, causal)")
-    ap.add_argument("--min-risk-ticks", type=float, default=4.0)
     ap.add_argument("--tick-size", type=float, default=0.25)
     ap.add_argument("--max-risk-usd", type=float, default=150.0)
     ap.add_argument("--point-value-usd", type=float, default=2.0)
@@ -211,7 +214,7 @@ def main():
     df = load_csv(args.csv_path)
     p = Params(at_period=args.at_period, at_mult=args.at_mult, at_use_volume=False,
                piv_period=args.piv_period, piv_atr_period=args.piv_atr_period, piv_atr_factor=args.piv_atr_factor,
-               atr_len=args.atr_len, sl_buffer_atr=args.sl_buffer_atr, tp_r_mult=args.tp_r_mult,
+               atr_len=args.atr_len, tp_r_mult=args.tp_r_mult,
                trailing_exit_source=args.trailing_exit_source,
                max_risk_usd=args.max_risk_usd, point_value_usd=args.point_value_usd, max_qty=args.max_qty,
                max_trades_per_day=args.max_trades_per_day,
@@ -223,8 +226,8 @@ def main():
     print(f"Datos: {len(df)} velas · train={len(df_train)} ({df_train.index[0]} -> {df_train.index[-1]}) "
           f"· test={len(df_test)} ({df_test.index[0]} -> {df_test.index[-1]})", file=sys.stderr)
 
-    _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.min_risk_ticks)
-    _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.min_risk_ticks)
+    _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.sl_atr_mult)
+    _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.sl_atr_mult)
 
     for label, s in [("TRAIN", s_train), ("TEST", s_test)]:
         print(f"\n{label}: trades={s['trades']}  win_rate={s['win_rate']*100:.1f}%  "

@@ -206,42 +206,55 @@ El CSV es el export de TradingView ("Export chart data") con al menos
 - La hipótesis "un flip de AlphaTrend mata al Pivot Point SuperTrend
   vigente" se sostiene con fuerza (67-85% según filtro de ruido) y de
   forma muy consistente entre timeframes — ver
-  `runs/2026-09-17_alphatrend_kills_pivot.txt`. Todavía no se probó
-  como filtro real de la estrategia.
+  `runs/2026-09-17_alphatrend_kills_pivot.txt`. **⚠️ Corregido después
+  (ver bullet de "corrección de fondo" más abajo): con la definición
+  correcta de "flip" el kill rate baja a ~50%**, básicamente al azar.
 - **⚠️ "Matar" el pivot NO anticipa un recorrido grande — es al revés.**
-  Se midió el MFE tras cada flip genuino de AlphaTrend, separando
-  tramos donde el pivot queda muerto vs donde se lo vuelve a tocar
-  (retest) antes de seguir. En las 5 temporalidades, de forma muy
-  consistente: los tramos que MATAN el pivot recorren poco (mediana
-  ~0.5R, sólo 18-23% llega a 1R, duran ~8-9 velas) — son impulsos que
-  se agotan rápido. Los tramos que SÍ vuelven a tocar el pivot antes de
-  continuar recorren mucho más (mediana ~2R, ~99% llega a 1R, ~50%
-  llega a 2R, duran ~16-18 velas). Es el patrón clásico de "breakout +
-  retest" siendo mejor que el breakout solo. No construir una entrada
-  de "flip + kill esperando movimiento grande" — sería apostar
+  Se midió el MFE tras cada flip de AlphaTrend, separando tramos donde
+  el pivot queda muerto vs donde se lo vuelve a tocar (retest) antes de
+  seguir. Consistente en las 5 temporalidades: los tramos que MATAN el
+  pivot recorren poco (mediana ~0.55-0.64R, sólo 23-31% llega a 1R) —
+  impulsos que se agotan rápido. Los que SÍ retestean antes de continuar
+  recorren mucho más (mediana ~3.5-4R, ~90-97% llega a 1R, ~65-79%
+  llega a 2R) — patrón "breakout + retest" clásico. No construir una
+  entrada de "flip + kill esperando movimiento grande" — sería apostar
   justamente al caso de recorrido chico. Ver
-  `runs/2026-09-19_post_kill_runup.txt`. Posible siguiente paso (no
-  construido todavía): entrada al flip de AlphaTrend confirmada recién
-  cuando el precio hace retest del pivot roto, en vez de fade o de
-  apostar al kill.
+  `runs/2026-09-19_post_kill_runup.txt` (números actualizados tras la
+  corrección de fondo). Posible siguiente paso, no backtesteado
+  todavía: entrada confirmada recién cuando el precio retestea el pivot
+  roto, en vez de fade o de apostar al kill.
 - **Segunda estrategia (continuación, no fade): entrar directo al flip
-  de AlphaTrend — CERRADA, sin ventaja.** Con TP fijo o trailing de Pivot
-  no funciona (aguanta operaciones larguísimo sin cortar las malas). Un
-  primer barrido pareció mostrar ventaja consistente con SL chico +
-  trailing de AlphaTrend en 1m/2m/5m, pero **era un artefacto de
-  look-ahead bias** en el filtro de "flip genuino" (decidía si un flip
-  servía mirando el futuro). Corregido con un filtro causal
-  (`analyze_alphatrend_flip_entry.py`, `causal_confirmed_flips` /
-  `--confirm-bars`) y barrido completo (confirm_bars 1-8 x sl_buffer x
-  6 salidas x 4 temporalidades, 442 combos): **sólo 1/442 pasa
-  train_pf>1 Y test_pf>1**, sin repetirse en ninguna otra temporalidad —
-  ruido de comparaciones múltiples, no ventaja real. Entrar directo al
-  flip de AlphaTrend, con cualquier demora de confirmación causal
-  probada, no funciona. Ver `runs/2026-09-19_alphatrend_flip_entry.txt`
-  (incluye la corrección completa y el cierre). El camino que sigue
-  pareciendo prometedor —no backtesteado todavía como regla operable— es
-  exigir un retest del pivot roto antes de entrar (ver punto anterior,
-  `runs/2026-09-19_post_kill_runup.txt`).
+  de AlphaTrend.** Con TP fijo o trailing de Pivot por valor de línea no
+  funciona (aguanta operaciones larguísimo sin cortar las malas). Un
+  primer barrido pareció mostrar ventaja consistente en 1m/2m/5m, pero
+  era un artefacto de look-ahead bias en el filtro de "flip genuino"
+  (corregido con `causal_confirmed_flips` / `--confirm-bars`) — con esa
+  corrección sola, 0-1 de 442 combos pasaban train_pf>1 y test_pf>1.
+  **Con la corrección de fondo de la definición de "flip" (ver bullet
+  siguiente) + SL de ATR puro (no apoyado en el pivot, que ahora queda
+  del lado equivocado ~46% de las veces) + salida por régimen** (no por
+  valor de línea), reaparece señal: **8 de 120 combinaciones pasan
+  train_pf>1 Y test_pf>1, y las 8 son de 1m** con distintos valores de
+  SL y tipos de salida — más compatible con un efecto real y modesto en
+  1m que con una casualidad aislada, aunque 8/120 (6.7%) sigue sin
+  poder descartar del todo el azar. Ejemplo: 1m, `--sl-atr-mult 3.0
+  --tp-r-mult 1.0`: train PF=1.32 (n=117, +0.14R), test PF=1.70 (n=53,
+  +0.23R). Ningún combo de 2m/5m/15m/240m pasó. Ver
+  `runs/2026-09-19_alphatrend_flip_entry.txt` y
+  `analyze_alphatrend_flip_entry.py`.
+- **⚠️ Corrección de fondo (encontrada gracias al usuario comparando
+  contra su gráfico real): la definición de "flip de AlphaTrend" estaba
+  mal.** Se definía como "cierre por encima/debajo de la línea", pero el
+  indicador público real colorea la nube según la PENDIENTE de la línea
+  (AlphaTrend[i] vs AlphaTrend[i-2]), no según dónde esté el precio.
+  Verificado con datos reales: la definición vieja daba 5x más "flips"
+  que la real (1372 vs 283 en un archivo de 5m), incluyendo señales que
+  en el gráfico real no existen. **No afecta a mecha_fade** (la
+  estrategia original wick-fade sólo usa el VALOR de la línea, nunca el
+  concepto de régimen/color) — sí afectaba a los tres puntos de arriba
+  (kills_pivot, post_kill_runup, flip_entry), todos corregidos y
+  re-corridos. Ver `runs/2026-09-19_alphatrend_regime_fix.txt` para el
+  detalle completo de la corrección y su impacto.
 
 ## Qué mirar en el resultado
 

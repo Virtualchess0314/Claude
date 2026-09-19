@@ -48,30 +48,44 @@ from engine import (
 
 def detect_alphatrend_flips(df: pd.DataFrame, p: Params, volume_available: bool) -> tuple[np.ndarray, np.ndarray]:
     """
-    Devuelve (regime, flip_bars). `regime[i]` = 1 si el precio está POR
-    ENCIMA de la línea de AlphaTrend (la línea actúa como soporte) o -1
-    si está por DEBAJO (actúa como resistencia); NaN si todavía no hay
-    AlphaTrend calculado. `flip_bars` = velas donde el CIERRE cruza la
-    línea de un lado al otro -esto es lo que se ve en el gráfico como
-    "la línea salta al otro lado del precio" tras un breakout real.
+    Devuelve (regime, flip_bars). `regime[i]` = 1 (nube verde/alcista) o
+    -1 (nube roja/bajista); NaN si todavía no hay suficiente AlphaTrend
+    calculado. `flip_bars` = velas donde cambia el color de la nube.
 
-    OJO: esto es distinto del régimen interno de la fórmula (que
-    conmuta según RSI/MFI cruza 50). El régimen interno puede voltear
-    sin que la línea llegue a cruzar al precio (ruido de RSI 50 que no
-    produce ningún breakout visible) -probado y descartado: con esa
-    definición salían ~1350 "flips" en 2 meses de 5m (un salto cada
-    8 velas en promedio), que no es lo que un trader llamaría
-    "breakout". Cruce de precio contra la línea es la definición que
-    coincide con lo que se ve en el chart.
+    Replica cómo colorea la nube el indicador AlphaTrend público real:
+    comparando el valor de la línea contra el de 2 velas atrás
+    (AlphaTrend > AlphaTrend[2] -> verde, AlphaTrend < AlphaTrend[2] ->
+    rojo, empate -> mantiene el color anterior).
+
+    CORRECCIÓN (encontrada revisando capturas de gráfico real del
+    usuario): una versión anterior de esta función definía el régimen
+    como "el cierre está arriba o abajo de la línea", pensando que
+    coincidía con lo que se ve en el chart. Es falso: esa definición es
+    ~5x más ruidosa que la real. Verificado con datos reales de 5m
+    (13-ago, ventana de 5 horas): la definición por pendiente detecta
+    1 sólo flip, exactamente donde el usuario lo señala en su chart
+    ("Sell" cuando la nube pasa a roja); "cierre vs línea" detectaba 11
+    flips falsos en la misma ventana -la línea puede quedar
+    momentáneamente entre mechas de precio sin que la tendencia de
+    fondo (su propia pendiente) haya cambiado. En todo un archivo de 5m,
+    "cierre vs línea" da 1372 flips vs 283 reales por pendiente. Todo
+    análisis que dependía de esta función (analyze_post_kill_runup.py,
+    analyze_alphatrend_flip_entry.py) se corrió con la definición vieja
+    y quedó invalidado -hay que rehacerlo con esta versión.
     """
-    close = df["close"].to_numpy()
     at = alpha_trend(df, p, volume_available)
-
     n = len(df)
+
     regime = np.full(n, np.nan)
     for i in range(n):
-        if not np.isnan(at[i]):
-            regime[i] = 1.0 if close[i] > at[i] else -1.0
+        if i < 2 or np.isnan(at[i]) or np.isnan(at[i - 2]):
+            continue
+        if at[i] > at[i - 2]:
+            regime[i] = 1.0
+        elif at[i] < at[i - 2]:
+            regime[i] = -1.0
+        else:
+            regime[i] = regime[i - 1] if not np.isnan(regime[i - 1]) else np.nan
 
     flips = []
     prev = None

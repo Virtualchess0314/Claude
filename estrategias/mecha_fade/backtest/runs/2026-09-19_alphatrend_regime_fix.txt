@@ -1,0 +1,124 @@
+Corrección de fondo, encontrada gracias a que el usuario insistió en
+comparar los resultados del backtest contra ejemplos reales de su
+gráfico ("no veo por qué no funcionaría" / "no hay entrada el 13 a las
+6:55 en el gráfico de 5 minutos").
+
+## El bug
+
+`detect_alphatrend_flips()` (usada por analyze_alphatrend_kills_pivot.py,
+analyze_post_kill_runup.py y analyze_alphatrend_flip_entry.py) definía
+el "régimen" de AlphaTrend como CIERRE POR ENCIMA/DEBAJO DE LA LÍNEA.
+Eso es incorrecto: el indicador AlphaTrend público de verdad colorea la
+nube (verde/rojo) según si la LÍNEA MISMA está subiendo o bajando
+(compara su valor actual contra el de 2 velas atrás:
+AlphaTrend > AlphaTrend[2] -> verde, si no -> rojo), NO según dónde
+esté el precio.
+
+Verificado con datos reales de 5m (13-ago, ventana 03:00-08:00 UTC):
+  - Definición correcta (pendiente): 1 sólo flip en toda la ventana
+    (a las 06:40, de alcista a bajista) -coincide EXACTO con el "Sell"
+    que el usuario señala en su gráfico.
+  - Definición vieja (cierre vs línea): 11 flips falsos en la misma
+    ventana, incluyendo una entrada "long" a las 06:55 que en realidad
+    seguía dentro del mismo tramo bajista iniciado a las 06:40.
+
+En todo el archivo de 5m: 1372 flips con la definición vieja vs 283 con
+la correcta -5x más ruido del real.
+
+## Alcance del bug
+
+NO afecta la estrategia mecha_fade original (wick-fade): esa entrada
+(`long_at = close > alphaTrend and low < alphaTrend`) sólo usa el VALOR
+de la línea como nivel, nunca el concepto de "régimen/color". Todos los
+hallazgos de mecha_fade (mejor config 15m, trailing de pivot, etc.)
+siguen siendo válidos tal cual.
+
+SÍ afecta las 3 líneas de investigación de "continuación al flip"
+construidas después: analyze_alphatrend_kills_pivot.py,
+analyze_post_kill_runup.py y analyze_alphatrend_flip_entry.py. Se
+corrigió `detect_alphatrend_flips()` y se rehicieron los tres análisis.
+
+## Resultado 1 (corregido): "el flip mata al pivot"
+
+Con la definición correcta, sin filtro de segmento mínimo (ya no hace
+falta, los flips son mucho más limpios):
+
+  TF     n flips  % pivot muerto (PPST)   duración tramo (mediana, velas)
+  1m     342       46.2%                   40.2
+  2m     217       53.5%                   38.2
+  5m     283       53.0%                   38.9
+  15m    249       59.8%                   41.3
+  240m   315       52.4%                   32.6
+
+Antes (con el bug): 67-85% de kill rate. Ahora: ~50%, básicamente una
+moneda al aire -la hipótesis original del usuario ("el flip siempre
+mata al pivot") se sostiene mucho más débil de lo que parecía. Lo que
+SÍ se sostiene con fuerza (ver resultado 2) es que el resultado de la
+moneda predice muy bien el tamaño del movimiento.
+
+## Resultado 2 (corregido): recorrido tras el flip -MUCHO más marcado
+
+  TF     killed mediana(R)  no-killed mediana(R)  ratio
+  1m     0.64                3.77                  ~6x
+  2m     0.55                3.84                  ~7x
+  5m     0.57                3.73                  ~7x
+  15m    0.62                3.47                  ~6x
+  240m   0.57                4.03                  ~7x
+
+Con TODOS los flips (sin separar): mediana ya de 1.1-1.6R, 53-64% llega
+a 1R -mucho mejor que la versión con bug (mediana 0.5-0.8R, 30-40%
+llegaba a 1R). La brecha killed/no-killed pasó de ~4x a ~6-7x. Sigue
+firme la conclusión: "matar" el pivot es la firma del movimiento CHICO,
+el retest es la firma del movimiento GRANDE.
+
+## Resultado 3 (corregido): backtest de entrada al flip
+
+Al rehacer el backtest con la definición correcta, aparecieron DOS
+problemas nuevos que hubo que resolver:
+
+1. Con flips ahora mucho más limpios/espaciados (duración de tramo
+   ~30-40 velas en vez de ~10), el nivel de Pivot Point SuperTrend
+   "vigente" al momento del flip frecuentemente queda del LADO
+   EQUIVOCADO del precio (su propio trend interno no cambió al mismo
+   tiempo que AlphaTrend) -el SL calculado da riesgo negativo/sin
+   sentido en ~46% de los flips (109 de 237 en 1m train). Se reemplazó
+   el SL "apoyado en el pivot" por un SL simple de ATR
+   (entry -/+ sl_atr_mult x ATR), sin depender del pivot para esto.
+2. La salida por trailing sobre AlphaTrend (`trailing_exit_source='at'`)
+   seguía usando el criterio viejo y ruidoso (cierre vs línea) para
+   decidir cuándo cerrar, desalineado con la entrada (que ahora usa el
+   criterio correcto). Se agregó `trailing_exit_source='regime'`: cierra
+   recién cuando el MISMO criterio de pendiente vuelve a flipear en
+   contra.
+
+Con ambas correcciones, barrido de sl_atr_mult (0.5/1/1.5/2/3) x 6
+salidas (TP 1/1.5/2/3/5R, trailing por régimen) x 5 temporalidades = 120
+combinaciones con muestra suficiente:
+
+**8/120 pasan train_pf>1 Y test_pf>1 -y los 8 son de 1m**, con distintos
+valores de sl_atr_mult (1.0 a 3.0) y distintos tipos de salida (TP fijo
+y trailing por régimen). A diferencia del hallazgo anterior (invalidado
+por look-ahead bias, que "pegaba" en 3 timeframes con un único combo
+específico), acá el patrón es "muchos combos distintos, todos en el
+mismo timeframe" -más compatible con un efecto real y modesto en 1m que
+con una casualidad de comparaciones múltiples (aunque 8/120=6.7% sigue
+siendo una tasa consistente con azar puro; no se puede descartar del
+todo sin más datos).
+
+Ejemplo representativo (1m, sl_atr_mult=3.0, TP fijo R=1.0):
+  train: n=117  PF=1.32  expectancy=+0.14R
+  test:  n=53   PF=1.70  expectancy=+0.23R
+
+Ningún combo de 2m/5m/15m/240m pasó el filtro train&test>1.
+
+## Pendiente
+
+- Actualizar mecha_fade.pine para colorear la nube de AlphaTrend según
+  la pendiente real (hoy la plotea siempre verde, `#00e600` fijo) -sólo
+  cosmético, no afecta la lógica de la estrategia wick-fade, pero ayuda
+  a comparar visualmente con TradingView.
+- El hallazgo de 1m (Resultado 3) es prometedor pero todavía delgado
+  -antes de confiar en él: ampliar la muestra (más meses de 1m),
+  revisar sensibilidad a costos reales, y decidir si conviene explorar
+  más a fondo el camino del "retest" (Resultado 2) en vez de la entrada
+  cruda al flip.
