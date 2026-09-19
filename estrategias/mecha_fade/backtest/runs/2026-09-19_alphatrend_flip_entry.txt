@@ -124,3 +124,34 @@ Queda pendiente probar si confirmar el flip con más de 1 vela
 (`--confirm-bars 2/3/5/8`, sigue siendo causal: sólo espera a que el
 régimen se sostenga antes de entrar, no mira el futuro) rescata algo -en
 curso al momento de escribir esto.
+
+## Barrido final (causal, con confirm_bars variable): CERRADO, sin ventaja
+
+Se completó el barrido: confirm_bars (1/2/3/5/8) x sl_buffer_atr
+(0.0/0.1/0.25/0.5/1.0) x 6 salidas (TP 1/1.5/2/3R, trailing AT, trailing
+Pivot) x 4 temporalidades = 442 combinaciones con muestra suficiente
+(train>=20, test>=10).
+
+**Resultado: 1/442 pasa train_pf>1 Y test_pf>1** (1m, confirm_bars=5,
+sl_buffer_atr=0.50, trailing AT: train_pf=1.09, test_pf=2.77). Un solo
+hit sobre 442 pruebas, con train_pf apenas por encima de 1 (1.09) y sin
+ningún combo análogo en otra temporalidad -es ruido de comparaciones
+múltiples (1/442 = 0.2%, incluso más raro que el 5/88 que resultó ser el
+artefacto de look-ahead corregido arriba), no una ventaja real.
+
+## Conclusión final
+
+Entrar directo al flip de AlphaTrend (con cualquier demora de
+confirmación causal probada, de 1 a 8 velas, y cualquier combinación de
+SL/salida probada) **no muestra ventaja real** en ninguna de las 4
+temporalidades con datos suficientes. Se cierra esta línea de
+investigación tal como está planteada -entrada al flip crudo, sin filtro
+adicional.
+
+El camino que sigue pareciendo prometedor (no backtesteado todavía como
+regla operable) es el de `runs/2026-09-19_post_kill_runup.txt`: exigir
+que el precio retestee el pivot roto antes de confirmar la entrada, en
+vez de entrar directo al flip. Ese hallazgo mostró una diferencia de
+recorrido de ~4x (mediana 2R vs 0.5R) entre tramos que retestean y
+tramos que no -pendiente de convertirlo en una regla de entrada real y
+backtestearla con la misma disciplina causal aplicada acá.

@@ -225,19 +225,23 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   cuando el precio hace retest del pivot roto, en vez de fade o de
   apostar al kill.
 - **Segunda estrategia (continuación, no fade): entrar directo al flip
-  de AlphaTrend.** Con TP fijo o trailing de Pivot no funciona (aguanta
-  operaciones larguísimo sin cortar las malas). Un primer barrido pareció
-  mostrar ventaja consistente con SL chico + trailing de AlphaTrend en
-  1m/2m/5m, pero **era un artefacto de look-ahead bias** en el filtro de
-  "flip genuino" (decidía si un flip servía mirando el futuro). Corregido
-  con un filtro causal (`analyze_alphatrend_flip_entry.py`,
-  `causal_confirmed_flips` / `--confirm-bars`), **0 de 90 combinaciones
-  pasan train_pf>1 Y test_pf>1** — por ahora, entrar directo al flip de
-  AlphaTrend (con `confirm_bars=1`, entrada inmediata sin filtros extra)
-  no muestra ventaja real. Ver `runs/2026-09-19_alphatrend_flip_entry.txt`
-  (incluye la corrección completa). Pendiente: revisar si confirmar el
-  flip con más de 1 vela (`--confirm-bars`, sigue siendo causal) cambia
-  algo.
+  de AlphaTrend — CERRADA, sin ventaja.** Con TP fijo o trailing de Pivot
+  no funciona (aguanta operaciones larguísimo sin cortar las malas). Un
+  primer barrido pareció mostrar ventaja consistente con SL chico +
+  trailing de AlphaTrend en 1m/2m/5m, pero **era un artefacto de
+  look-ahead bias** en el filtro de "flip genuino" (decidía si un flip
+  servía mirando el futuro). Corregido con un filtro causal
+  (`analyze_alphatrend_flip_entry.py`, `causal_confirmed_flips` /
+  `--confirm-bars`) y barrido completo (confirm_bars 1-8 x sl_buffer x
+  6 salidas x 4 temporalidades, 442 combos): **sólo 1/442 pasa
+  train_pf>1 Y test_pf>1**, sin repetirse en ninguna otra temporalidad —
+  ruido de comparaciones múltiples, no ventaja real. Entrar directo al
+  flip de AlphaTrend, con cualquier demora de confirmación causal
+  probada, no funciona. Ver `runs/2026-09-19_alphatrend_flip_entry.txt`
+  (incluye la corrección completa y el cierre). El camino que sigue
+  pareciendo prometedor —no backtesteado todavía como regla operable— es
+  exigir un retest del pivot roto antes de entrar (ver punto anterior,
+  `runs/2026-09-19_post_kill_runup.txt`).
 
 ## Qué mirar en el resultado
 
