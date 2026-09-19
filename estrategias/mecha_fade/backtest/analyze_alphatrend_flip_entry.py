@@ -80,14 +80,15 @@ def causal_confirmed_flips(regime: np.ndarray, confirm_bars: int) -> np.ndarray:
     return np.array(flips, dtype=int)
 
 
-def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr_mult: float) -> tuple[pd.DataFrame, dict]:
+def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr_mult: float,
+                           require_opposite_color_pivot: bool = False) -> tuple[pd.DataFrame, dict]:
     h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
     ts = df.index
     n = len(df)
     volume_available = "volume" in df.columns
 
     alpha = alpha_trend(df, p, volume_available)
-    piv_line, _ = pivot_point_supertrend(df, p)
+    piv_line, piv_trend = pivot_point_supertrend(df, p)
     atr_risk = wilder_atr(df["high"], df["low"], df["close"], p.atr_len)
     slip = p.slippage_ticks * p.tick_size
 
@@ -164,6 +165,8 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr
             atr_i = atr_risk[i]
             if np.isnan(atr_i) or atr_i <= 0:
                 continue
+            if require_opposite_color_pivot and (np.isnan(piv_trend[i]) or piv_trend[i] == regime[i]):
+                continue  # el pivot ya es del mismo color que la nube nueva -no cuenta (ver post_kill_runup)
             is_long = regime[i] == 1.0
             entry_signal_price = c[i]
             entry_price = entry_signal_price + slip if is_long else entry_signal_price - slip
@@ -201,6 +204,8 @@ def main():
                      help="'at'/'piv': cierre cruza la línea (ruidoso). 'regime': espera al próximo flip real de régimen (recomendado, mismo criterio que la entrada)")
     ap.add_argument("--confirm-bars", type=int, default=1,
                      help="velas que el nuevo régimen debe sostenerse antes de confirmar la entrada (1=inmediato, causal)")
+    ap.add_argument("--require-opposite-color-pivot", action="store_true",
+                     help="sólo entra si, al momento del flip, el Pivot Point SuperTrend es de color CONTRARIO a la nube nueva (ver runs/2026-09-19_post_kill_runup.txt)")
     ap.add_argument("--tick-size", type=float, default=0.25)
     ap.add_argument("--max-risk-usd", type=float, default=150.0)
     ap.add_argument("--point-value-usd", type=float, default=2.0)
@@ -226,8 +231,8 @@ def main():
     print(f"Datos: {len(df)} velas · train={len(df_train)} ({df_train.index[0]} -> {df_train.index[-1]}) "
           f"· test={len(df_test)} ({df_test.index[0]} -> {df_test.index[-1]})", file=sys.stderr)
 
-    _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.sl_atr_mult)
-    _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.sl_atr_mult)
+    _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot)
+    _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot)
 
     for label, s in [("TRAIN", s_train), ("TEST", s_test)]:
         print(f"\n{label}: trades={s['trades']}  win_rate={s['win_rate']*100:.1f}%  "

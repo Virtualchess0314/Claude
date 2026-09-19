@@ -255,6 +255,26 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   (kills_pivot, post_kill_runup, flip_entry), todos corregidos y
   re-corridos. Ver `runs/2026-09-19_alphatrend_regime_fix.txt` para el
   detalle completo de la corrección y su impacto.
+- **🏆 Filtro de color de pivot (idea del usuario) — el hallazgo más
+  fuerte de todo el proyecto.** El Pivot Point SuperTrend tiene su
+  propio color/trend (soporte/resistencia), independiente del color de
+  la nube. Sólo cuenta "matar" un pivot de color CONTRARIO a la nube
+  nueva (el remanente de la tendencia vieja) — los de mismo color ya
+  están alineados, no es el mismo fenómeno, y antes se contaban
+  mezclados. Con este filtro: el kill rate baja a 19-29% (antes ~50%) —
+  la mayoría de las veces (71-81%) el precio SÍ retestea el pivot viejo
+  antes de seguir. La brecha killed/no-killed se vuelve casi binaria:
+  killed nunca llega a 1R (0-2.8%), no-killed SIEMPRE llega a 1R (100%),
+  en las 5 temporalidades. Backtesteado como filtro de entrada real
+  (`--require-opposite-color-pivot`): **15/90 combinaciones pasan
+  train_pf>1 Y test_pf>1 (16.7%, vs ~5-7% esperable por azar)**,
+  repartidas en 4 temporalidades (1m: 9/30, 2m: 2/24, 5m: 3/24, 15m:
+  1/12) — mucho más robusto que cualquier hallazgo anterior de esta
+  línea de investigación (antes concentrado en una sola temporalidad).
+  Mejor ejemplo: 1m, `sl_atr_mult=4.0, tp_r_mult=1.0`: train PF=1.47
+  (n=62, +0.15R), test PF=1.42 (n=35, +0.11R). Ver
+  `runs/2026-09-19_opposite_color_pivot_filter.txt`. Pendiente: ampliar
+  muestra y revisar sensibilidad a costos antes de operar.
 
 ## Qué mirar en el resultado
 

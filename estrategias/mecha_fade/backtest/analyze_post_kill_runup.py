@@ -38,9 +38,9 @@ from engine import Params, pivot_point_supertrend, wilder_atr
 
 
 def measure_runups(df: pd.DataFrame, regime: np.ndarray, flips: np.ndarray, p: Params,
-                    min_risk_ticks: float, tick_size: float) -> pd.DataFrame:
+                    min_risk_ticks: float, tick_size: float, require_opposite_color: bool = True) -> pd.DataFrame:
     h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
-    piv_line, _ = pivot_point_supertrend(df, p)
+    piv_line, piv_trend = pivot_point_supertrend(df, p)
     atr = wilder_atr(df["high"], df["low"], df["close"], p.atr_len)
     n = len(df)
 
@@ -50,6 +50,8 @@ def measure_runups(df: pd.DataFrame, regime: np.ndarray, flips: np.ndarray, p: P
         atr_i = atr[flip_i]
         if np.isnan(level) or np.isnan(atr_i) or atr_i <= 0:
             continue
+        if require_opposite_color and (np.isnan(piv_trend[flip_i]) or piv_trend[flip_i] == regime[flip_i]):
+            continue  # el pivot ya es del mismo color que la nube nueva -no es un nivel viejo para "matar"
         is_long = regime[flip_i] == 1.0
         entry = c[flip_i]
         risk = abs(entry - level)
@@ -116,6 +118,8 @@ def main():
     ap.add_argument("--min-risk-ticks", type=float, default=4.0,
                      help="ignora flips donde el pivot está a menos de N ticks del precio (R indefinido)")
     ap.add_argument("--tick-size", type=float, default=0.25)
+    ap.add_argument("--allow-same-color-pivot", action="store_true",
+                     help="no filtrar por color del pivot (default: sólo cuenta pivots de color CONTRARIO a la nube nueva)")
     args = ap.parse_args()
 
     df = load_csv(args.csv_path)
@@ -129,7 +133,8 @@ def main():
     print(f"Velas: {len(df)} ({df.index[0]} -> {df.index[-1]})", file=sys.stderr)
     print(f"Flips genuinos analizados: {len(flips)} (de {len(flips_raw)} crudos)", file=sys.stderr)
 
-    runs = measure_runups(df, regime, flips, p, args.min_risk_ticks, args.tick_size)
+    runs = measure_runups(df, regime, flips, p, args.min_risk_ticks, args.tick_size,
+                           require_opposite_color=not args.allow_same_color_pivot)
     print(f"Flips con R definido (pivot no pegado al precio): {len(runs)}\n")
 
     summarize(runs, "TODOS los flips")
