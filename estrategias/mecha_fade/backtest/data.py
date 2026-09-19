@@ -39,3 +39,19 @@ def load_csv(path: str, tz: str = "UTC") -> pd.DataFrame:
     if tz != "UTC":
         out.index = out.index.tz_convert(tz)
     return out
+
+
+def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """
+    Agrega velas OHLC(V) a una temporalidad mayor (ej. "3min", "10min",
+    "30min") -para timeframes de los que no hay CSV exportado, resampleando
+    desde uno más fino. Sólo una aproximación: no es idéntico a un export
+    nativo de esa temporalidad (los límites de vela pueden no coincidir
+    exactamente con los que usa el exchange/TradingView), pero sirve para
+    explorar si un hallazgo se sostiene en timeframes intermedios.
+    """
+    agg = {"open": "first", "high": "max", "low": "min", "close": "last"}
+    if "volume" in df.columns:
+        agg["volume"] = "sum"
+    out = df.resample(rule, closed="left", label="left").agg(agg).dropna(subset=["open", "high", "low", "close"])
+    return out
