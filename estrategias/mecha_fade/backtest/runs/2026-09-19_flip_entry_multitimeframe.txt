@@ -1,0 +1,47 @@
+Pedido del usuario: 1m tiene demasiado ruido (la regla de régimen se
+invalida muy seguido); probar 3m/5m/10m/15m/30m en vez de sólo 1m/2m/5m.
+
+No hay CSV exportado de 3m/10m/30m -se generaron re-muestreando (OHLC
+agregado) desde 1m (-> 3m) y 5m (-> 10m, 30m). Función nueva:
+`data.resample_ohlc()`. Validado: 5m re-muestreado a 15m coincide 100%
+con el CSV real de 15m (diff máxima de cierre = 0.0000) -el método es
+confiable, aunque el límite exacto de vela puede no coincidir con el
+que usa el exchange/TradingView en el caso general.
+
+## Resultado
+
+Mismo barrido que en runs/2026-09-19_alphatrend_regime_fix.txt (SL de
+ATR puro x tipo de salida, con la definición corregida de "flip" y
+salida por régimen), ahora sobre 3m/5m/10m/15m/30m:
+
+  TF    combos con muestra suficiente   pasan train_pf>1 y test_pf>1
+  3m    ~14                              0
+  5m    ~20                              0
+  10m   ~13                              2 (train_pf~1.02-1.05, test_pf~1.0-1.33)
+  15m   ~19                              0
+  30m   0 (sólo 44 flips totales en ~2 meses -muestra insuficiente)
+
+Total: 2/70. Ninguno de los dos hits de 10m es fuerte (PF apenas por
+encima de 1). Comparar con el hallazgo de 1m
+(runs/2026-09-19_alphatrend_regime_fix.txt): 8/120, todos en 1m, con
+métricas más marcadas (PF 1.3-1.7).
+
+## Interpretación
+
+Es lo contrario de la hipótesis del usuario: alejarse de 1m no rescata
+ni fortalece la señal, la debilita. El efecto modesto encontrado en 1m
+no se sostiene en 3m/5m/10m/15m con la misma mecánica (SL de ATR +
+salida por régimen). Dos lecturas posibles, no resueltas:
+  1. El edge de 1m es real pero frágil, específico de la frecuencia con
+     la que el régimen puede revertirse rápido (mecanismo que se diluye
+     en timeframes más lentos).
+  2. El hallazgo de 1m (8/120) es en sí mismo ruido de comparaciones
+     múltiples y simplemente no se repitió por casualidad al ampliar el
+     barrido a otras temporalidades.
+
+No hay base para seguir puliendo la entrada al flip crudo en ninguna
+temporalidad con la evidencia actual. Se recomienda priorizar la línea
+del retest del pivot (runs/2026-09-19_post_kill_runup.txt), que sigue
+siendo el hallazgo más fuerte y consistente entre TODAS las
+temporalidades de todo el proyecto (6-7x de diferencia entre segmentos
+que retestean vs los que matan el pivot).

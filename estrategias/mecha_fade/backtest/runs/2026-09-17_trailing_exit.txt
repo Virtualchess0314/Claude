@@ -1,0 +1,48 @@
+Motivado por un ejemplo del usuario (captura de chart): busca SL chico
+al entrar, pero en vez de un TP fijo a un múltiplo de R, quedarse
+montado mientras la tendencia (la nube de AlphaTrend en su ejemplo)
+siga sosteniendo el movimiento, saliendo recién cuando esa estructura
+se rompe -no cuando se toca un target fijo.
+
+Se agregó `Params.trailing_exit_source` ('at'/'piv'/None): reemplaza
+el TP fijo por una salida a mercado cuando el precio cierra del otro
+lado del indicador elegido (mismo criterio de "flip de régimen" que en
+analyze_alphatrend_kills_pivot.py). El SL original se mantiene como
+piso de seguridad, nunca se relaja.
+
+## Resultado (AlphaTrend solo entra la señal, at_mult=2.0, sl_buffer_atr=1.0)
+
+  15m:
+    TP fijo R=2.0        train PF=1.51 (n=96)  test PF=1.34 (n=55)  winrate=44.4% exp_r=+0.22
+    Trailing AlphaTrend  train PF=1.31 (n=178) test PF=0.65 (n=91)  winrate=17.5% exp_r=+0.05
+    Trailing Pivot       train PF=2.23 (n=145) test PF=1.26 (n=80)  winrate=34.7% exp_r=+0.42  <- MEJOR
+
+  1m/2m/5m: ninguna variante de trailing supera al TP fijo -mismo
+  patrón de siempre, la ventaja no se generaliza fuera de 15m.
+
+  240m: sin muestra suficiente (7 operaciones) para decir nada.
+
+## Por qué Trailing Pivot funciona mejor que Trailing AlphaTrend
+
+AlphaTrend (at_mult=2.0) es la misma línea que generó la señal de
+entrada -salir cuando ELLA se rompe significa salir muy seguido por
+ruido normal de la tendencia (whipsaws), por eso su winrate cae a
+17-26% en todos los timeframes: te saca de operaciones que después
+siguen funcionando. Pivot Point SuperTrend, con una banda mucho más
+ancha (piv_atr_factor=3.0 vs at_mult=2.0), tolera ese ruido y sólo
+corta cuando la estructura de tendencia realmente se invierte -deja
+correr las ganadoras mucho más, que es exactamente lo que buscaba el
+usuario en su ejemplo.
+
+## Conclusión
+
+Nueva mejor configuración encontrada: **AlphaTrend (entrada) + at_mult=2.0
++ sl_buffer_atr=1.0 + salida por trailing de Pivot**, en 15m. Casi
+duplica la expectativa de la versión con TP fijo (0.42R vs 0.22R por
+operación) con una muestra similar. Sigue con la misma advertencia
+que toda la línea de 15m: no se replica en otros timeframes, tratar
+con cautela hasta conseguir más historial o validar en timeframes
+vecinos (10m/20m).
+
+Implementación: `Params.trailing_exit_source`, expuesto en
+optimize.py (`--trailing-exit-source at|piv`).

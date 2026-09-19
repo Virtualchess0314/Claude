@@ -1,0 +1,54 @@
+Secuencia exacta que planteó el usuario (con dibujo a mano): entrar en
+la MISMA vela que AlphaTrend cambia de color (con el pivot todavía del
+color viejo -esto ya está validado, ver
+runs/2026-09-19_opposite_color_pivot_filter.txt), y salir/tomar TP
+recién cuando el PIVOT confirma (flipea a favor de la posición) -"ahí
+ya podríamos cerrar con TP o dejarlo correr".
+
+Se probaron las DOS variantes que sugiere esa frase:
+
+## Variante 1: cerrar directo cuando el pivot confirma (`pivot_confirms`)
+
+Barrido: sl_atr_mult (0.5 a 4.0) x 5 temporalidades, sólo con
+--require-opposite-color-pivot. 20 combos con muestra suficiente,
+**0/20 pasan train_pf>1 Y test_pf>1**. Mejor caso: 1m sl=4.0, train
+PF=0.94, test PF=0.93 -ninguno cruza 1.0 en ambos lados.
+
+Por qué: en el ejemplo típico, el pivot confirma bastante rápido
+después del flip (avg_bars_held ~8 velas en 1m), mucho antes de que se
+desarrolle el recorrido grande que se midió en
+runs/2026-09-19_pivot_flip_definition_fix.txt (mediana 4.5-5R, pero
+medido desde el flip original hasta el PRÓXIMO flip de AlphaTrend,
+~30-40 velas después, no hasta la confirmación del pivot). Cerrar
+justo en la confirmación deja la mayor parte del recorrido grande sin
+capturar.
+
+## Variante 2: al confirmar, mover SL a breakeven y dejarlo correr (`pivot_confirms_then_trail`)
+
+Misma entrada; al confirmar el pivot, el SL se mueve a breakeven
+(entry_price) y se deja correr hasta que la NUBE (no el pivot) se
+revierta. Mismo barrido: **1/20 pasa** (1m, sl_atr_mult=4.0: train
+PF=1.16 n=105 +0.05R, test PF=1.27 n=47 +0.04R), y el resto del barrido
+es notablemente peor que las variantes ya validadas -varios combos con
+PF de test entre 0.1 y 0.3.
+
+(Nota técnica: la primera corrida de este barrido tuvo un bug -el
+r_multiple se recalculaba con el SL YA movido a breakeven, dando riesgo
+0 y expectativas corruptas tipo -0.9 a -1.4R. Corregido guardando el
+riesgo original de la entrada aparte; los números de arriba ya están
+con la corrección.)
+
+## Conclusión
+
+Ninguna de las dos variantes de "salir en la confirmación del pivot"
+mejora lo que ya se tenía. El hallazgo que sigue siendo el mejor de
+toda esta línea de investigación continúa siendo el mismo: entrar al
+flip de AlphaTrend con el pivot todavía del color viejo
+(--require-opposite-color-pivot), con salida por TP fijo o por
+`trailing_exit_source='regime'` (esperar a que la NUBE se revierta, no
+el pivot) -15/90 combinaciones, repartidas en 4 temporalidades. Se
+cierra esta rama de "salir en la confirmación del pivot".
+
+Implementación: `trailing_exit_source='pivot_confirms'` y
+`'pivot_confirms_then_trail'` en analyze_alphatrend_flip_entry.py
+(--trailing-exit-source).

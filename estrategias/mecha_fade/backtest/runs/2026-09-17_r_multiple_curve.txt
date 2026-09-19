@@ -1,0 +1,50 @@
+Pregunta del usuario: para la entrada tal cual la describió (mecha por
+fuera de cualquiera de los 3 indicadores + cierre adentro -> entrar al
+cierre en el sentido opuesto, con SL más allá del extremo de la mecha +
+buffer de ATR), ¿qué pasa con el winrate al barrer el take profit en
+múltiplos de R: 1:1, 1:1.5, 1:2, 1:3, 1:4, 1:5, 1:6, 1:7, 1:8, 1:9, 1:10?
+
+Método: `analyze_r_multiple_curve.py`, confluence_need=1 (cualquiera de
+los 3 indicadores dispara -es la señal cruda, sin ajustar parámetros
+propios de cada indicador), sl_buffer_atr=0.10, sobre TODO el dataset
+de cada temporalidad (no train/test -acá el objetivo es ver la forma de
+la curva, no validar robustez).
+
+Resultado: el winrate cae de forma monótona y esperable a medida que el
+target se aleja (de ~44-49% en 1:1 a ~9-29% en 1:10, según
+temporalidad) -nada sorprendente ahí, es la relación matemática normal
+entre winrate y R. Lo que importa es si la CAÍDA de winrate alcanza a
+compensar el R más grande (profit factor):
+
+  1m:   PF nunca supera 0.75 en ningún R (mejor: R=3, PF=0.75)
+  2m:   PF nunca supera 0.83 en ningún R (mejor: R=6, PF=0.83)
+  5m:   PF nunca supera 0.91 en ningún R (mejor: R=6, PF=0.91, winrate 18.7%)
+  15m:  PF cruza 1.0 en una zona angosta R=2 a R=6 (0.99/1.01/0.99),
+        pico en R=5 (PF=1.01, winrate 22.6%, net apenas +$409 en ~5 meses)
+  240m: PF nunca supera 0.82 en ningún R (mejor: R=5, PF=0.82)
+
+Conclusión: con la señal cruda (cualquiera de los 3 indicadores,
+parámetros default de cada uno, sl_buffer_atr=0.10), NO hay ningún
+múltiplo de R entre 1 y 10 que le dé ventaja real a la estrategia en
+1m, 2m, 5m ni 240m -en todos los casos el profit factor se queda por
+debajo de 1 en todo el rango. La única excepción es 15m, y ahí el
+"cruce" de PF=1.0 es marginal (apenas +$409 sobre ~5 meses, con más de
+600 operaciones -no es una ventaja explotable, es prácticamente
+breakeven con ruido).
+
+Esto es coherente con el hallazgo de runs/2026-09-17_source_quality.txt:
+la señal cruda (sin ajustar el ancho de banda de cada indicador) no
+tiene ventaja en ningún timeframe. La única configuración con ventaja
+real encontrada hasta ahora sigue siendo AlphaTrend aislado en 15m con
+at_mult=2.0 (no el default 1.0) -ahí sí aparece un profit factor
+consistente de 1.0-1.1 con muestra grande. Cambiar sólo el R-múltiplo,
+sin tocar el ancho de banda del indicador que genera la señal, no
+alcanza para crear una ventaja que no está.
+
+Próximo paso sugerido: repetir esta misma curva de R-múltiplo pero con
+`only_source='at'` y `at_mult=2.0` en 15m, para ver si además de subir
+el profit factor promedio, hay algún R-múltiplo particular que lo
+maximice más allá de lo ya visto en el barrido de source_quality.
+
+Scripts: estrategias/mecha_fade/backtest/analyze_r_multiple_curve.py
+         estrategias/mecha_fade/backtest/analyze_source_quality.py

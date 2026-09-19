@@ -1,0 +1,308 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════
+// Mecha Fade [AlphaTrend + Pivot + DIY] - reversión de mecha (wick fade)
+//
+// Idea del usuario: 3 indicadores (AlphaTrend, Pivot, "DIY") actúan cada
+// uno como un nivel de soporte/resistencia. Cuando una vela mete una
+// mecha por FUERA de uno de esos niveles pero CIERRA de nuevo adentro,
+// se interpreta como un barrido de liquidez / falso quiebre, y se entra
+// al cierre de esa vela buscando el movimiento opuesto (fade).
+//
+// Definición de los 3 indicadores (confirmada con el usuario tras
+// compartir el código de "DIY Custom Strategy Builder [ZP]" y una
+// captura del gráfico real):
+//   - AlphaTrend: indicador externo (no está en el script "DIY").
+//     Fórmula pública estándar (ratchet ATR/RSI o ATR/MFI).
+//   - Pivot: NO son floor pivots de piso (primer intento, descartado)
+//     sino el indicador público "Pivot Point SuperTrend" -pivotes de
+//     swing promediados en una línea "center", envuelta en un trailing
+//     stop tipo SuperTrend sobre ATR. Es la línea roja/verde escalonada
+//     que el usuario identificó en el gráfico real.
+//   - DIY: el usuario confirmó que de ese script sólo usa la función de
+//     "Supply/Demand Zone" (cajas soporte/resistencia ancladas a los
+//     últimos swing high/low, con buffer de ATR(50) y ruptura/BOS) -no
+//     el motor de ~35 indicadores líder + confirmaciones que trae el
+//     resto del script. El "punto rojo" que se ve en el gráfico es el
+//     marcador de POI de una zona recién formada (nace angosta).
+//
+// Simplificación sobre la zona Supply/Demand: el script original
+// mantiene hasta 20 zonas por lado, pudiendo tener varias activas en
+// simultáneo. Acá se sigue sólo la MÁS RECIENTE por lado (se reemplaza
+// al aparecer un swing no solapado, se desactiva al romperse -mismo
+// criterio BOS: el cierre cruza el borde de la zona).
+//
+// ⚠️ Sin confirmar todavía: si los 3 indicadores deben coincidir a la vez
+// o alcanza con cualquiera (confluence_need, default = cualquiera), y la
+// regla de salida exacta (acá: SL más allá de la mecha + TP a múltiplo R,
+// ambos parametrizables).
+//
+// Educational tool. Not financial advice.
+// ═══════════════════════════════════════════════════════════════════
+strategy('Mecha Fade [AlphaTrend+Pivot+DIY]', shorttitle='MechaFade', overlay=true,
+     initial_capital=50000, default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_contract, commission_value=0,
+     calc_on_every_tick=false, process_orders_on_close=true,
+     margin_long=5, margin_short=5,
+     max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+// ── Inputs: AlphaTrend ──────────────────────────────────────────
+grpAT = "AlphaTrend"
+at_period     = input.int(14, "Período (ATR/RSI/MFI)", group=grpAT)
+at_mult       = input.float(1.0, "Multiplicador ATR", group=grpAT)
+at_use_volume = input.bool(false, "Usar MFI (necesita volumen real, si no cae a RSI)", group=grpAT)
+
+// ── Inputs: Pivot (Pivot Point SuperTrend) ─────────────────────────
+grpPiv = "Pivot (Pivot Point SuperTrend)"
+piv_period     = input.int(2, "Pivot Period (left=right)", group=grpPiv)
+piv_atr_period = input.int(10, "ATR Period", group=grpPiv)
+piv_atr_factor = input.float(3.0, "ATR Factor", group=grpPiv)
+
+// ── Inputs: DIY (Supply/Demand Zone) ─────────────────────────────
+grpDiy = "DIY (Supply/Demand Zone)"
+diy_swing        = input.int(10, "Swing High/Low Length", group=grpDiy)
+diy_atr_len      = input.int(50, "ATR Length (zona)", group=grpDiy)
+diy_box_width    = input.float(2.5, "Ancho de zona (x ATR/10)", group=grpDiy)
+diy_overlap_mult = input.float(2.0, "No reemplazar zona si el nuevo swing cae a menos de N x ATR", group=grpDiy)
+
+// ── Inputs: Confluencia ───────────────────────────────────────────
+grpConf = "Confluencia"
+confluence_need = input.int(1, "Mínimo de indicadores que deben coincidir (1=cualquiera, 3=los 3)", minval=1, maxval=3, group=grpConf)
+fresh_only = input.bool(false, "Filtro de frescura (sólo 1ra mecha por nivel/zona)", group=grpConf,
+     tooltip="Sólo cuenta la PRIMERA mecha que testea cada nivel/zona desde que nació (último flip de régimen para AlphaTrend/Pivot, nueva zona para DIY). Probado sobre datos reales: no mejoró el resultado (ver runs/2026-09-17_fresh_only_filter.txt) -disponible para seguir explorando, no recomendado como default.")
+
+// ── Inputs: Riesgo / salida ───────────────────────────────────────
+grpRisk = "Riesgo"
+atr_len       = input.int(14, "ATR Length (riesgo)", group=grpRisk)
+sl_buffer_atr = input.float(0.10, "Buffer SL más allá de la mecha (x ATR)", group=grpRisk)
+exitMode      = input.string("TP fijo", "Modo de salida", options=["TP fijo", "Trailing AlphaTrend", "Trailing Pivot"], group=grpRisk,
+     tooltip="TP fijo: cierra a un múltiplo de R. Trailing: en vez de TP fijo, se queda montado mientras el indicador elegido siga actuando de soporte/resistencia y sale recién cuando el precio cierra del otro lado -probado sobre datos reales: Trailing Pivot casi duplicó la expectativa de TP fijo en 15m (ver runs/2026-09-17_trailing_exit.txt). El SL siempre se mantiene como piso de seguridad.")
+tp_r_mult     = input.float(1.5, "Take Profit (múltiplo de R, sólo si Modo=TP fijo)", group=grpRisk)
+max_risk_usd  = input.float(150.0, "Riesgo máximo por operación (USD)", group=grpRisk)
+point_value   = input.float(2.0, "Valor por punto (USD) - MNQ=2", group=grpRisk)
+max_qty       = input.int(40, "Contratos máximos", group=grpRisk)
+
+// ── Inputs: Sesión / control diario ───────────────────────────────
+grpSess = "Sesión"
+use_session   = input.bool(true, "Cerrar todo al fin de sesión", group=grpSess)
+sess_close_hh = input.int(16, "Hora de cierre (HH, hora NY)", group=grpSess)
+sess_close_mm = input.int(45, "Hora de cierre (MM)", group=grpSess)
+max_trades    = input.int(999, "Máx. operaciones/día (999 = sin límite)", group=grpSess)
+
+// ── Core: AlphaTrend ───────────────────────────────────────────────
+atrAT = ta.atr(at_period)
+upT = low - atrAT * at_mult
+downT = high + atrAT * at_mult
+momentum = at_use_volume ? ta.mfi(hlc3, at_period) : ta.rsi(close, at_period)
+var float alphaTrend = na
+alphaTrend := momentum >= 50 ? math.max(upT, nz(alphaTrend[1], upT)) : math.min(downT, nz(alphaTrend[1], downT))
+
+// ── Core: Pivot (Pivot Point SuperTrend, fórmula pública estándar) ──
+pivATR = ta.atr(piv_atr_period)
+piv_ph = ta.pivothigh(high, piv_period, piv_period)
+piv_pl = ta.pivotlow(low, piv_period, piv_period)
+
+var float pivCenter = na
+pivNewPP = not na(piv_ph) ? piv_ph : not na(piv_pl) ? piv_pl : na
+if not na(pivNewPP)
+    pivCenter := na(pivCenter[1]) ? pivNewPP : (pivCenter[1] * 2 + pivNewPP) / 3
+
+pivUp = pivCenter - piv_atr_factor * pivATR
+pivDn = pivCenter + piv_atr_factor * pivATR
+
+var float pivTup = na
+var float pivTdown = na
+var float pivTrend = 1.0
+pivTup := close[1] > nz(pivTup[1], pivUp) ? math.max(pivUp, nz(pivTup[1], pivUp)) : pivUp
+pivTdown := close[1] < nz(pivTdown[1], pivDn) ? math.min(pivDn, nz(pivTdown[1], pivDn)) : pivDn
+pivTrend := close > nz(pivTdown[1], pivDn) ? 1.0 : close < nz(pivTup[1], pivUp) ? -1.0 : nz(pivTrend[1], 1.0)
+pivotLine = pivTrend == 1.0 ? pivTup : pivTdown
+
+// ── Core: DIY = zona de Supply/Demand (única del script ZP que se usa) ─
+atrpoi = ta.atr(diy_atr_len)
+diy_ph = ta.pivothigh(high, diy_swing, diy_swing)
+diy_pl = ta.pivotlow(low, diy_swing, diy_swing)
+
+var float supTop = na
+var float supBot = na
+var float supPoi = na
+var float demTop = na
+var float demBot = na
+var float demPoi = na
+var int supId = 0
+var int demId = 0
+var int nextSupId = 0
+var int nextDemId = 0
+
+if not na(diy_ph)
+    buf = atrpoi * (diy_box_width / 10)
+    newTop = diy_ph
+    newBot = diy_ph - buf
+    newPoi = (newTop + newBot) / 2
+    if na(supPoi) or math.abs(newPoi - supPoi) > atrpoi * diy_overlap_mult
+        supTop := newTop
+        supBot := newBot
+        supPoi := newPoi
+        nextSupId += 1
+        supId := nextSupId
+
+if not na(diy_pl)
+    buf = atrpoi * (diy_box_width / 10)
+    newBot = diy_pl
+    newTop = diy_pl + buf
+    newPoi = (newTop + newBot) / 2
+    if na(demPoi) or math.abs(newPoi - demPoi) > atrpoi * diy_overlap_mult
+        demTop := newTop
+        demBot := newBot
+        demPoi := newPoi
+        nextDemId += 1
+        demId := nextDemId
+
+// Ruptura (BOS): el cierre cruza el borde de la zona -> se desactiva
+if not na(supTop) and close >= supTop
+    supTop := na
+    supBot := na
+    supPoi := na
+    supId := 0
+if not na(demBot) and close <= demBot
+    demTop := na
+    demBot := na
+    demPoi := na
+    demId := 0
+
+// ── Señales de "mecha por fuera, cierre adentro" (fade) ────────────
+// AlphaTrend: línea única que actúa como soporte (precio arriba) o
+// resistencia (precio abajo) según el régimen -se chequean ambos lados.
+long_at = not na(alphaTrend) and close > alphaTrend and low < alphaTrend
+short_at = not na(alphaTrend) and close < alphaTrend and high > alphaTrend
+
+// Pivot: línea única (Pivot Point SuperTrend) que actúa como soporte o
+// resistencia según el trend -mismo criterio que AlphaTrend.
+long_piv = not na(pivotLine) and close > pivotLine and low < pivotLine
+short_piv = not na(pivotLine) and close < pivotLine and high > pivotLine
+
+// DIY: soporte = borde superior de la zona demanda, resistencia = borde
+// inferior de la zona oferta (el borde más cercano al precio).
+long_diy = not na(demTop) and low < demTop and close > demTop
+short_diy = not na(supBot) and high > supBot and close < supBot
+
+// ── Filtro de frescura (ver nota en el input) ──────────────────────
+// Sólo cuenta la primera mecha que testea cada nivel/zona desde que
+// nació: último flip de régimen para AlphaTrend/Pivot, nueva zona
+// (supId/demId) para DIY.
+atSide = na(alphaTrend) ? na : close > alphaTrend ? 1 : -1
+var float atSidePrev = na
+var float atTestedSide = na
+if atSide != atSidePrev
+    atTestedSide := na
+atSidePrev := atSide
+
+pivSide = na(pivotLine) ? na : close > pivotLine ? 1 : -1
+var float pivSidePrev = na
+var float pivTestedSide = na
+if pivSide != pivSidePrev
+    pivTestedSide := na
+pivSidePrev := pivSide
+
+var int supTestedId = 0
+var int demTestedId = 0
+
+if fresh_only
+    if long_at or short_at
+        if atTestedSide == atSide
+            long_at := false
+            short_at := false
+        else
+            atTestedSide := atSide
+    if long_piv or short_piv
+        if pivTestedSide == pivSide
+            long_piv := false
+            short_piv := false
+        else
+            pivTestedSide := pivSide
+    if short_diy and supTestedId == supId
+        short_diy := false
+    else if short_diy
+        supTestedId := supId
+    if long_diy and demTestedId == demId
+        long_diy := false
+    else if long_diy
+        demTestedId := demId
+
+n_long  = (long_at ? 1 : 0) + (long_piv ? 1 : 0) + (long_diy ? 1 : 0)
+n_short = (short_at ? 1 : 0) + (short_piv ? 1 : 0) + (short_diy ? 1 : 0)
+
+// ── Sesión / control diario ─────────────────────────────────────────
+ch = hour(time, "America/New_York")
+cm = minute(time, "America/New_York")
+ct = ch * 60 + cm
+cutoff = sess_close_hh * 60 + sess_close_mm
+in_sess = not use_session or ct < cutoff
+is_eod = use_session and ct >= cutoff
+
+var int dtrades = 0
+new_day = ta.change(dayofmonth(time, "America/New_York")) != 0
+if new_day
+    dtrades := 0
+can_trade = dtrades < max_trades and in_sess
+
+// ── Señal final (si empatan long/short en la misma vela, se descarta -
+//    ambigua, criterio conservador) ─────────────────────────────────
+long_go  = n_long >= confluence_need and n_short < confluence_need and can_trade and strategy.position_size == 0
+short_go = n_short >= confluence_need and n_long < confluence_need and can_trade and strategy.position_size == 0
+
+// ── Ejecución ────────────────────────────────────────────────────────
+var float e_sl = na
+var float e_tp = na
+atr_risk = ta.atr(atr_len)
+
+useTrailing = exitMode != "TP fijo"
+trailLine = exitMode == "Trailing AlphaTrend" ? alphaTrend : exitMode == "Trailing Pivot" ? pivotLine : na
+
+if long_go
+    e_sl := low - atr_risk * sl_buffer_atr
+    risk_pts = close - e_sl
+    e_tp := useTrailing ? na : close + risk_pts * tp_r_mult
+    qty = risk_pts > 0 ? int(math.min(max_qty, math.floor(max_risk_usd / (risk_pts * point_value)))) : 0
+    if qty > 0
+        strategy.entry("L", strategy.long, qty=qty)
+        strategy.exit("XL", "L", stop=e_sl, limit=e_tp)
+        dtrades += 1
+
+if short_go
+    e_sl := high + atr_risk * sl_buffer_atr
+    risk_pts = e_sl - close
+    e_tp := useTrailing ? na : close - risk_pts * tp_r_mult
+    qty = risk_pts > 0 ? int(math.min(max_qty, math.floor(max_risk_usd / (risk_pts * point_value)))) : 0
+    if qty > 0
+        strategy.entry("S", strategy.short, qty=qty)
+        strategy.exit("XS", "S", stop=e_sl, limit=e_tp)
+        dtrades += 1
+
+// Salida por trailing: el SL de arriba se mantiene como piso de
+// seguridad, esto sólo reemplaza el TP fijo -sale cuando el precio
+// cierra del otro lado del indicador elegido (mismo criterio de "flip
+// de régimen" que se usa para detectar señales).
+if useTrailing and not na(trailLine)
+    if strategy.position_size > 0 and close < trailLine
+        strategy.close("L", comment="TRAIL")
+    if strategy.position_size < 0 and close > trailLine
+        strategy.close("S", comment="TRAIL")
+
+if is_eod and strategy.position_size != 0
+    strategy.close_all(comment="EOD")
+
+// ── Visuales ──────────────────────────────────────────────────────
+plot(alphaTrend, "AlphaTrend", color=color.new(#00e600, 0), linewidth=2)
+
+plot(pivotLine, "Pivot Point SuperTrend", color=pivTrend == 1.0 ? color.new(color.lime, 0) : color.new(color.red, 0), linewidth=2, style=plot.style_linebr)
+
+plot(supTop, "DIY Supply Top", color=color.new(color.red, 30), style=plot.style_linebr)
+plot(supBot, "DIY Supply Bottom", color=color.new(color.red, 30), style=plot.style_linebr)
+plot(demTop, "DIY Demand Top", color=color.new(color.aqua, 30), style=plot.style_linebr)
+plot(demBot, "DIY Demand Bottom", color=color.new(color.aqua, 30), style=plot.style_linebr)
+
+plotshape(long_go, "Long Entry", shape.triangleup, location.belowbar, color.green, size=size.normal)
+plotshape(short_go, "Short Entry", shape.triangledown, location.abovebar, color.red, size=size.normal)
+
+alertcondition(long_go, "Mecha Fade Long", "Mecha Fade: entrada long")
+alertcondition(short_go, "Mecha Fade Short", "Mecha Fade: entrada short")

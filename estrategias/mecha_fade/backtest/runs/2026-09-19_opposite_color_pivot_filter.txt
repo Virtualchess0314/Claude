@@ -1,0 +1,125 @@
+Idea del usuario: el Pivot Point SuperTrend tiene su PROPIO color/trend
+(soporte=verde/1, resistencia=rojo/-1), independiente del color de la
+nube de AlphaTrend. "El pivot que hay que buscar matar es el del color
+CONTRARIO a la nube -no valen los pivots del mismo color."
+
+Tiene razón, y conceptualmente es obvio en retrospectiva: sólo tiene
+sentido "matar" un pivot que sea el remanente de la tendencia VIEJA. Si
+al momento del flip el Pivot Point SuperTrend YA es del mismo color que
+la nube nueva, ya está alineado con la tendencia actual -no hay nada
+viejo que invalidar, no es el mismo fenómeno. Antes se contaban ambos
+casos mezclados.
+
+## Cuántos son de cada tipo
+
+  TF     flips  mismo color(pivot=nube)  color contrario
+  1m     342    36.8%                    63.2%
+  5m     283    42.8%                    57.2%
+  15m    249    50.6%                    49.4%
+
+El color contrario es la MAYORÍA en 1m/5m, casi mitad y mitad en 15m.
+
+## Kill rate corregido (analyze_alphatrend_kills_pivot.py)
+
+Filtrando sólo a pivots de color contrario (los que sí cuentan):
+
+  TF     n testeados   % muerto
+  1m     216            19.0%
+  2m     124            27.4%
+  5m     162            25.3%
+  15m    123            29.3%
+  240m   197            25.9%
+
+Antes (sin filtrar por color, con la definición ya corregida de flip):
+~50%. Con el filtro de color: **sólo 19-29% se mata**. La hipótesis
+original del usuario ("el flip mata al pivot") es la MINORÍA de los
+casos reales -la gran mayoría de las veces (71-81%) el precio SÍ vuelve
+a tocar ese pivot viejo antes de seguir.
+
+## Recorrido corregido (analyze_post_kill_runup.py) -el hallazgo más fuerte de todo el proyecto
+
+Con el filtro de color contrario, la brecha entre killed/no-killed se
+vuelve casi binaria, y el agregado ("TODOS los flips") mejora
+muchísimo porque ahora está dominado por la mayoría "no-killed" (que es
+el caso bueno):
+
+  TF     TODOS mediana(R)  TODOS %≥1R  killed mediana(R)  killed %≥1R  no-killed mediana(R)  no-killed %≥1R
+  1m     2.89              79.9%       0.36                0.0%         4.02                  100.0%
+  2m     2.69              72.1%       0.49                0.0%         4.36                  100.0%
+  5m     2.22              74.4%       0.49                0.0%         3.99                  100.0%
+  15m    2.83              71.5%       0.46                2.8%         4.64                  100.0%
+  240m   2.79              74.1%       0.45                0.0%         4.15                  100.0%
+
+Prácticamente perfecto: cuando el pivot de color contrario queda
+muerto, el recorrido NUNCA llega a 1R (0-2.8% según timeframe); cuando
+se lo vuelve a tocar, SIEMPRE llega a 1R (100%). Y como el caso "no
+muerto" es ~75-80% de los casos, el agregado sin filtrar por kill/no-kill
+ya tiene mediana ~2.2-2.9R y 71-80% llega a 1R, consistente en las 5
+temporalidades.
+
+## Backtest de entrada real con este filtro (analyze_alphatrend_flip_entry.py --require-opposite-color-pivot)
+
+Barrido: sl_atr_mult (1/1.5/2/3/4) x 6 salidas (TP 1/1.5/2/3/5R,
+trailing por régimen) x 5 temporalidades = 90 combinaciones con muestra
+suficiente (train>=15, test>=8; 240m sigue sin muestra por el problema
+de sizing ya documentado -riesgo en puntos incompatible con
+max_risk_usd fijo en un rango de 6.5 años).
+
+**15/90 pasan train_pf>1 Y test_pf>1 (16.7%)** -muy por encima del
+~5-7% esperable por puro azar, y repartido en CUATRO temporalidades
+distintas (no concentrado en una sola como hallazgos anteriores):
+
+  TF    combos probados   pasan
+  1m    30                 9  (30%)
+  2m    24                 2
+  5m    24                 3
+  15m   12                 1
+
+Mejores resultados:
+  1m,  sl_atr_mult=4.0, TP=1.0R: train PF=1.47 (n=62, +0.15R)  test PF=1.42 (n=35, +0.11R)
+  2m,  sl_atr_mult=3.0, TP=1.5R: train PF=1.40 (n=22, +0.16R)  test PF=1.23 (n=16, +0.12R)
+  1m,  sl_atr_mult=3.0, TP=1.0R: train PF=1.13 (n=89, +0.06R)  test PF=1.36 (n=42, +0.14R)
+  5m,  sl_atr_mult=3.0, TP=1.0R: train PF=1.11 (n=20, +0.05R)  test PF=1.45 (n=22, +0.10R)
+
+## Conclusión
+
+Con el filtro de color de pivot que planteó el usuario, la entrada al
+flip de AlphaTrend pasa de "sin ventaja" (0-1/442 en el intento
+anterior) a un patrón mucho más creíble: ventaja modesta pero
+consistente, presente en 4 de las 5 temporalidades con datos
+suficientes, con múltiples combinaciones de parámetros distintas
+funcionando en cada una (no un solo hit aislado). Es, hasta ahora, el
+resultado más sólido de toda la línea de investigación de "continuación
+al flip".
+
+Pendiente antes de operar esto: ampliar la muestra (más meses de
+datos, sobre todo en 2m/5m/15m que tienen pocas decenas de operaciones),
+revisar sensibilidad a costos reales, y considerar sumar el filtro de
+retest (no sólo exigir color contrario, sino además esperar el toque)
+para ver si mejora más -aunque eso reduciría todavía más la frecuencia
+de señales.
+
+Implementación: `--require-opposite-color-pivot` en
+analyze_alphatrend_flip_entry.py, `require_opposite_color` (default
+True) en analyze_alphatrend_kills_pivot.test_ppst_pivot_kill y
+analyze_post_kill_runup.measure_runups.
+
+## ⚠️ CORRECCIÓN (mismo día): la definición de "killed" en este archivo
+   estaba mal, ver runs/2026-09-19_pivot_flip_definition_fix.txt
+
+Los números de kill rate y de recorrido killed/no-killed de este
+archivo (19-29% de kill rate, killed nunca llega a 1R, no-killed
+siempre llega a 1R) usaban "killed = el precio nunca vuelve a tocar el
+valor congelado del pivot al momento del flip". El usuario aclaró que
+"matar" es que el PIVOT MISMO flipea de color (así funciona el
+indicador) -no que se toque un valor de precio congelado. Con la
+definición corregida el kill rate es 63-74% (no 19-29%) y los rótulos
+killed/no-killed quedan EXACTAMENTE AL REVÉS: killed (el pivot SÍ
+flipea) es el caso de recorrido GRANDE (mediana 4.5-5R, 99-100% llega a
+1R), no-killed (el pivot se mantiene terco) es el de recorrido CHICO
+(mediana 0.5-0.65R, 17-28% llega a 1R). El filtro de color de pivot
+como condición de ENTRADA (--require-opposite-color-pivot, el resultado
+de 15/90 combinaciones más abajo) NO se ve afectado por esta corrección
+-sigue siendo válido tal cual, porque filtra por el color del pivot AL
+MOMENTO del flip, no por si después "muere" o no. Ver el archivo nuevo
+para el detalle completo.

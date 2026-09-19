@@ -1,0 +1,36 @@
+Pregunta del usuario: ¿se tuvo en cuenta la dirección de la entrada
+-long (comprar en soporte) vs short (vender en resistencia)- o el
+resultado mezcla ambas sin distinguir?
+
+Hasta este punto todos los números reportados eran agregados
+(long+short juntos). Se desglosó por dirección para ver si hay
+asimetría (ej. que toda la ventaja venga de un solo lado).
+
+## Señal cruda (defaults, confluence_need=1)
+
+  tf     long PF   short PF   (ambos perdedores, sin sesgo fuerte)
+  1m     0.568     0.599
+  2m     0.751     0.646
+  5m     0.758     0.681
+  15m    0.885     0.889
+  240m   0.751     0.553    <- el único con algo de asimetría (long algo mejor)
+
+## Configuración afinada (AlphaTrend solo, at_mult=2.0, sl_buffer_atr=1.0, tp_r_mult=2.0)
+
+  tf     long (soporte)          short (resistencia)
+  1m     n=121 PF=0.75           n=106 PF=1.05   <- algo de asimetría, muestra chica
+  2m     n=81  PF=0.75           n=94  PF=0.75
+  5m     n=109 PF=0.82           n=117 PF=0.83
+  15m    n=83  PF=1.45 win=44.6% n=68  PF=1.44 win=44.1%   <- prácticamente idéntico
+
+## Conclusión
+
+En la única configuración con ventaja real (15m), longs y shorts
+contribuyen de forma casi idéntica (PF 1.45 vs 1.44, winrate 44.6% vs
+44.1%) -no hay un lado "bueno" escondido detrás de un promedio
+mediocre, la ventaja es simétrica. En el resto de las temporalidades
+(donde no hay ventaja de todas formas) tampoco aparece una asimetría
+lo bastante grande como para sugerir "operar sólo long" o "sólo short"
+como filtro.
+
+No se encontró ninguna mejora aplicable filtrando por dirección.

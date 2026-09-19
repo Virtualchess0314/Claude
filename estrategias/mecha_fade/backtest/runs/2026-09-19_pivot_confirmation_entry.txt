@@ -1,0 +1,62 @@
+Siguiente paso lógico tras runs/2026-09-19_pivot_flip_definition_fix.txt:
+si el pivot confirmando (naciendo del color de la tendencia actual) se
+asocia casi perfecto con los recorridos grandes (mediana 4.5-5R,
+99-100% llega a 1R), ¿por qué no ENTRAR justo en ese momento en vez de
+al flip crudo de AlphaTrend? En ese momento el pivot recién nacido
+además queda del lado correcto del precio, así que se puede apoyar el
+SL directo en él (con buffer chico de ATR) en vez de usar ATR puro.
+
+Implementado: `pivot_confirmation_bars()` + `simulate_pivot_confirmation_entries()`
+en analyze_alphatrend_flip_entry.py (`--pivot-confirmation`).
+
+## Resultado: NO funciona -0/35 combinaciones, y casi sin muestra en 4 de 5 temporalidades
+
+Barrido: sl_buffer_atr (0.05/0.1/0.25/0.5/1.0) x 7 salidas (TP
+1/1.5/2/3/5R, trailing por régimen de nube, trailing por re-flip del
+propio pivot) x 5 temporalidades.
+
+  TF    combos con muestra suficiente (train>=15, test>=8)
+  1m    35
+  2m    0
+  5m    0
+  15m   0
+  240m  0
+
+**0/35** de los combos de 1m pasan train_pf>1 Y test_pf>1 (la mayoría
+con PF de train entre 0.4 y 0.9). Ningún combo de las otras 4
+temporalidades ni siquiera junta muestra suficiente.
+
+Ejemplo directo de por qué: 5m y 2m sólo dan 5 operaciones en todo el
+train (de ~140-220 señales de confirmación de pivot detectadas), 15m da
+CERO. La razón: el motor sólo puede tener una posición abierta a la
+vez, y las operaciones con esta entrada aguantan mucho (mediana ~59
+velas) -casi lo mismo que el intervalo típico entre señales de
+confirmación (~70-80 velas). La gran mayoría de las señales de
+confirmación ocurren mientras ya se está adentro de la operación
+anterior, y se descartan.
+
+## Por qué la estadística de recorrido no se traduce en una entrada real
+
+El análisis de MFE (post_kill_runup) mide el recorrido desde el momento
+del FLIP ORIGINAL de AlphaTrend, usando como riesgo la distancia al
+pivot de ESE momento. Para cuando el pivot confirma (a veces muchas
+velas después), buena parte del movimiento ya pasó -se pierde. Al
+entrar recién en la confirmación, el riesgo nuevo (pivot recién nacido,
+más cercano al precio) es más chico, pero lo que queda de recorrido por
+delante también lo es, y esa relación no está capturada por la
+estadística "recorrido de todo el episodio desde el flip original".
+En criollo: "matar el pivot es señal de que el episodio completo fue
+grande" no es lo mismo que "entrar cuando el pivot muere te da un
+movimiento grande desde ahí" -son preguntas distintas, y sólo la
+primera se sostiene con los datos.
+
+## Conclusión
+
+Se cierra esta variante: esperar la confirmación del pivot para entrar
+no funciona como regla operable, ni en 1m (measured, sin ventaja) ni en
+el resto de temporalidades (sin muestra). El hallazgo que SÍ sigue en
+pie es el de runs/2026-09-19_opposite_color_pivot_filter.txt: entrar
+DIRECTO al flip crudo de AlphaTrend, filtrando sólo por el color del
+pivot EN ESE MOMENTO (sin esperar a que confirme después) -ese sí entra
+al principio del movimiento en vez de después de que ya corrió, y ahí
+sí aparece ventaja real en 4 de 5 temporalidades (15/90 combinaciones).
