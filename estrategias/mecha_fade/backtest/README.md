@@ -208,6 +208,22 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   forma muy consistente entre timeframes — ver
   `runs/2026-09-17_alphatrend_kills_pivot.txt`. Todavía no se probó
   como filtro real de la estrategia.
+- **⚠️ "Matar" el pivot NO anticipa un recorrido grande — es al revés.**
+  Se midió el MFE tras cada flip genuino de AlphaTrend, separando
+  tramos donde el pivot queda muerto vs donde se lo vuelve a tocar
+  (retest) antes de seguir. En las 5 temporalidades, de forma muy
+  consistente: los tramos que MATAN el pivot recorren poco (mediana
+  ~0.5R, sólo 18-23% llega a 1R, duran ~8-9 velas) — son impulsos que
+  se agotan rápido. Los tramos que SÍ vuelven a tocar el pivot antes de
+  continuar recorren mucho más (mediana ~2R, ~99% llega a 1R, ~50%
+  llega a 2R, duran ~16-18 velas). Es el patrón clásico de "breakout +
+  retest" siendo mejor que el breakout solo. No construir una entrada
+  de "flip + kill esperando movimiento grande" — sería apostar
+  justamente al caso de recorrido chico. Ver
+  `runs/2026-09-19_post_kill_runup.txt`. Posible siguiente paso (no
+  construido todavía): entrada al flip de AlphaTrend confirmada recién
+  cuando el precio hace retest del pivot roto, en vez de fade o de
+  apostar al kill.
 
 ## Qué mirar en el resultado
 

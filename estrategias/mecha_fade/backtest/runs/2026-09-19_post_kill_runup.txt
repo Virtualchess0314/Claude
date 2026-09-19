@@ -1,0 +1,76 @@
+Pregunta del usuario: "cada vez que el precio cambia de nube (flip de
+AlphaTrend) intenta matar al pivot -¿hasta dónde quiere ir el precio una
+vez que lo mata?" Motivación: usar el flip de AlphaTrend como entrada
+(SL chico apoyado en el pivot recién roto) en vez de esperar la mecha de
+fade, y calibrar un target/trailing según ese recorrido típico.
+
+Metodología (analyze_post_kill_runup.py): para cada flip GENUINO de
+AlphaTrend (misma definición que analyze_alphatrend_kills_pivot.py:
+cruce de precio contra la línea, tramos >=3 velas para filtrar whipsaw):
+  - entrada hipotética = close en el bar del flip, dirección = nuevo
+    régimen.
+  - riesgo (1R) = |entrada - nivel del Pivot Point SuperTrend en ese
+    momento| (el pivot recién roto es el stop natural).
+  - se mide el MFE (Maximum Favorable Excursion) de todo el tramo hasta
+    el próximo flip, en múltiplos de R y de ATR.
+  - se separa en "killed" (el precio nunca vuelve a tocar ese nivel de
+    pivot en todo el tramo) vs "no killed" (lo vuelve a tocar en algún
+    punto antes del próximo flip).
+
+## Resultado: SORPRESA -es al revés de lo esperado
+
+En las 5 temporalidades (1m/2m/5m/15m/240m, 600-940 flips genuinos cada
+una) el patrón es IDÉNTICO y muy consistente:
+
+  Pivot MUERTO (killed=True)      -> MFE mediana ~0.50-0.54R, sólo 18-23%
+                                      llega a 1R, tramo dura ~8-9 velas.
+  Pivot NO muerto (se vuelve a
+  tocar antes de seguir)          -> MFE mediana ~1.9-2.1R, ~99% llega a
+                                      1R, ~50% llega a 2R, tramo dura
+                                      ~16-18 velas (2x más).
+
+Ejemplo (15m, n=711 flips): killed mediana=0.54R (22.5% llega a 1R) vs
+no-killed mediana=2.06R (98.9% llega a 1R, 53.4% llega a 2R). Mismo
+patrón exacto en 1m, 2m, 5m y 240m (ver runs/*.txt o volver a correr el
+script -no se guardó el output completo de cada timeframe aquí por
+espacio, pero la tabla comparativa es):
+
+  TF     killed mediana(R)  no-killed mediana(R)  killed n / no-killed n
+  1m     0.50                2.03                  671 / 266
+  2m     0.49                1.93                  468 / 141
+  5m     0.50                1.94                  603 / 192
+  15m    0.54                2.06                  537 / 174
+  240m   0.52                2.03                  539 / 193
+
+## Interpretación
+
+"Matar" el pivot (que el precio nunca lo vuelva a tocar) NO es señal de
+continuación fuerte -es lo contrario. Un tramo que mata el pivot y sigue
+sin pullback suele ser un impulso corto que se agota rápido (mediana
+~8-9 velas, <1R de recorrido en el 80% de los casos). Los movimientos
+grandes y sostenidos (2R+, tramos 2x más largos) son justamente los que
+SÍ vuelven a tocar el pivot roto antes de continuar -es decir, hacen un
+pullback/retest del nivel roto, cosa muy conocida en trading de breakouts
+("breakout + retest" suele ser mejor entrada que el breakout solo).
+
+Esto invalida la premisa de "flip + kill = quédate montado esperando un
+recorrido grande": es la señal opuesta. Un sistema de entrada al flip de
+AlphaTrend que además exige que el precio VUELVA a tocar el pivot roto
+(retest) antes de confirmar la entrada tendría, según estos datos, un
+payoff potencial mucho mayor (mediana ~2R vs ~0.5R) -aunque a costa de
+operar menos veces (n_no_killed es ~25-30% del total de flips) y de
+esperar más barras para la confirmación del retest.
+
+## Conclusión / siguiente paso sugerido
+
+No construir un sistema "flip + kill -> objetivo grande" (los datos dicen
+que ese caso es justamente el de recorrido chico). Si se quiere explotar
+esta asimetría, lo lógico sería probar una entrada "flip de AlphaTrend +
+retest confirmado del pivot roto" en vez de esperar la mecha de fade ni
+apostar al kill -pendiente de que el usuario decida si quiere que se
+construya y backtestee esa variante (con la disciplina train/test
+habitual antes de creerle el resultado).
+
+Implementación: `analyze_post_kill_runup.py`, reutiliza
+detect_alphatrend_flips/filter_genuine_flips de
+analyze_alphatrend_kills_pivot.py.
