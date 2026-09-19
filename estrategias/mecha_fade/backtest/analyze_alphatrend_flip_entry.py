@@ -237,6 +237,8 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr
     entry_price = entry_bar = None
     sl = tp = np.nan
     qty = 0
+    pivot_confirmed = False
+    entry_risk_pts = np.nan
 
     trades = []
 
@@ -259,6 +261,25 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr
                 # criterio es ruidoso, ver detect_alphatrend_flips):
                 # cierra apenas el régimen vuelve a flipear en contra.
                 if not np.isnan(regime[i]):
+                    hit_trail = (regime[i] == -1.0) if is_long else (regime[i] == 1.0)
+            elif p.trailing_exit_source == "pivot_confirms":
+                # Secuencia del usuario: entrar al flip de AlphaTrend con
+                # el pivot todavía del color viejo, y salir/tomar TP
+                # recién cuando el PIVOT confirma (flipea a favor de la
+                # posición) -no antes (no es TP fijo) ni mucho después
+                # (no es esperar a que la nube misma se revierta).
+                if not np.isnan(piv_trend[i]):
+                    hit_trail = (piv_trend[i] == 1.0) if is_long else (piv_trend[i] == -1.0)
+            elif p.trailing_exit_source == "pivot_confirms_then_trail":
+                # Variante "o dejarlo correr" de la secuencia del usuario:
+                # cuando el pivot confirma, en vez de cerrar, se mueve el
+                # SL a breakeven (entry_price) y se deja correr hasta que
+                # la nube misma se revierta (regime).
+                if not pivot_confirmed and not np.isnan(piv_trend[i]):
+                    if (piv_trend[i] == 1.0) if is_long else (piv_trend[i] == -1.0):
+                        pivot_confirmed = True
+                        sl = entry_price
+                if pivot_confirmed and not np.isnan(regime[i]):
                     hit_trail = (regime[i] == -1.0) if is_long else (regime[i] == 1.0)
             elif p.trailing_exit_source is not None:
                 trail_line = alpha[i] if p.trailing_exit_source == "at" else piv_line[i]
@@ -284,13 +305,15 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr
             if exit_price is not None:
                 pnl = (exit_price - entry_price) * qty * p.point_value_usd * (1 if is_long else -1)
                 pnl -= p.commission_round_turn_usd * qty
-                risk_pts = abs(entry_price - sl)
+                # usar el riesgo ORIGINAL de la entrada, no el sl actual
+                # (puede haberse movido a breakeven con pivot_confirms_then_trail,
+                # lo que daría riesgo 0 / r_multiple corrupto si se recalcula acá)
                 trades.append({
                     "entry_time": ts[entry_bar], "exit_time": ts[i],
                     "direction": "long" if is_long else "short",
                     "entry": entry_price, "exit": exit_price, "sl": sl, "reason": exit_reason,
                     "qty": qty, "pnl_usd": pnl,
-                    "r_multiple": pnl / (risk_pts * qty * p.point_value_usd) if risk_pts and risk_pts > 0 else np.nan,
+                    "r_multiple": pnl / (entry_risk_pts * qty * p.point_value_usd) if entry_risk_pts and entry_risk_pts > 0 else np.nan,
                     "bars_held": i - entry_bar,
                 })
                 open_pos = False
@@ -317,6 +340,8 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr
             if qty > 0:
                 open_pos = True
                 dtrades += 1
+                pivot_confirmed = False
+                entry_risk_pts = risk_pts
 
     trades_df = pd.DataFrame(trades)
     return trades_df, summarize(trades_df, volume_available)
@@ -335,8 +360,13 @@ def main():
     ap.add_argument("--sl-atr-mult", type=float, default=2.0,
                      help="SL = entry -/+ sl_atr_mult x ATR (no depende del pivot); con --pivot-confirmation es el buffer sobre el pivot recién nacido (usar valores chicos, ej 0.1-0.5)")
     ap.add_argument("--tp-r-mult", type=float, default=2.0)
-    ap.add_argument("--trailing-exit-source", choices=["at", "piv", "regime", "pivot_reflip"], default=None,
-                     help="'at'/'piv': cierre cruza la línea (ruidoso). 'regime': espera al próximo flip real de nube. 'pivot_reflip' (sólo con --pivot-confirmation): sale cuando el PIVOT vuelve a flipear en contra")
+    ap.add_argument("--trailing-exit-source",
+                     choices=["at", "piv", "regime", "pivot_reflip", "pivot_confirms", "pivot_confirms_then_trail"],
+                     default=None,
+                     help="'at'/'piv': cierre cruza la línea (ruidoso). 'regime': espera al próximo flip real de nube. "
+                          "'pivot_confirms': sale cuando el PIVOT flipea a favor de la posición. "
+                          "'pivot_confirms_then_trail': al confirmar, mueve el SL a breakeven y deja correr hasta que la nube se revierta. "
+                          "'pivot_reflip' (sólo con --pivot-confirmation): sale cuando el PIVOT vuelve a flipear en contra")
     ap.add_argument("--confirm-bars", type=int, default=1,
                      help="velas que el nuevo régimen debe sostenerse antes de confirmar la entrada (1=inmediato, causal)")
     ap.add_argument("--require-opposite-color-pivot", action="store_true",

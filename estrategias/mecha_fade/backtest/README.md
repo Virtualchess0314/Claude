@@ -301,6 +301,20 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   color de pivot AL MOMENTO del flip (sin esperar confirmación) — ese
   entra al principio del movimiento, no después. Ver
   `runs/2026-09-19_pivot_confirmation_entry.txt`.
+- **⚠️ Secuencia exacta del usuario (entrar al flip, SALIR cuando el
+  pivot confirma) — tampoco funciona, CERRADO.** Probadas las dos
+  variantes de "ahí ya podríamos cerrar con TP o dejarlo correr":
+  cerrar directo al confirmar (`trailing_exit_source='pivot_confirms'`,
+  0/20 combos) y mover SL a breakeven + dejar correr hasta que la NUBE
+  se revierta (`'pivot_confirms_then_trail'`, 1/20, peor que las
+  variantes ya validadas). Motivo: el pivot confirma rápido (~8 velas
+  en 1m), mucho antes de que se desarrolle el recorrido grande medido
+  en el bullet anterior (que va hasta el PRÓXIMO flip de AlphaTrend,
+  ~30-40 velas después) — cerrar o mover el SL ahí deja la mayor parte
+  del recorrido sin capturar. El mejor resultado de toda esta línea de
+  investigación sigue siendo el ya validado arriba: entrar con filtro
+  de color de pivot + salida por TP fijo o por reversión de la NUBE
+  (no del pivot). Ver `runs/2026-09-19_pivot_confirms_as_exit.txt`.
 
 ## Qué mirar en el resultado
 
