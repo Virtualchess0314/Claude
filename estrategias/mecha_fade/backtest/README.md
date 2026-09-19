@@ -323,14 +323,16 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   "consecutivos" de datos nativos (1m→2m, 2m→5m, 5m→15m, 15m→240m):
   3/56 combinaciones (5.4%, apenas sobre el azar), concentradas en un
   solo par y con perfil de sobreajuste (train mucho mejor que test).
-  Probado de nuevo con la escalera clásica completa (1-2-3-5-10-15-30-60,
+  Probado de nuevo con la escalera clásica completa (1-2-3-5-10-15-30-45-60,
   re-muestreando donde no había CSV nativo): **1/80 (1.25%, por debajo
-  del azar)**, un único hit aislado sin acompañamiento de ningún par
-  vecino, y 30m→60m sin ninguna operación (muestra insuficiente). En
-  ambas rondas, el par con más muestra y mejor resultado sin este
-  filtro (entradas en 1m) da 0/16 — agregar la confirmación de
-  temporalidad alta no mejora nada, empeora el resultado ya conocido.
-  Ver `runs/2026-09-19_htf_confirmation.txt` y
+  del azar)** en los pares hasta 30m, un único hit aislado sin
+  acompañamiento de ningún par vecino; agregado 45m para completar el
+  tramo 30-60, los pares 30m→45m y 45m→60m dan **0 operaciones** en
+  ambos (ni siquiera hay muestra para medir con los ~5 meses de datos
+  de base). En todas las rondas, el par con más muestra y mejor
+  resultado sin este filtro (entradas en 1m) da 0/16 — agregar la
+  confirmación de temporalidad alta no mejora nada, empeora el
+  resultado ya conocido. Ver `runs/2026-09-19_htf_confirmation.txt` y
   `analyze_htf_confirmation.py`.
 
 ## Qué mirar en el resultado

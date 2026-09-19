@@ -90,9 +90,20 @@ muestra chica. No hay ninguna base para sostener esta idea con la
 escalera completa tampoco -el resultado es, si acaso, más débil que el
 de la primera vuelta (pares "consecutivos" con datos nativos).
 
+## Tercera vuelta: agregado 45m a la escalera (30m→45m, 45m→60m)
+
+Se agregó 45m (re-muestreado desde 15m, 3 velas por vela de 45m) para
+completar el tramo 30-60 de la escalera. Resultado: **0 operaciones en
+AMBOS pares** (30m→45m y 45m→60m), en train y test -ni siquiera llegan
+a la muestra mínima para medir nada. Con sólo ~5 meses de datos de 15m
+de base, a 30-60m no hay suficientes flips de AlphaTrend con pivot de
+color contrario como para generar señales.
+
 ## Conclusión final
 
 Se cierra definitivamente esta línea de investigación (confirmación de
-temporalidad superior, en cualquiera de sus dos variantes probadas):
-no hay evidencia de que mejore el resultado ya conocido en ningún par
-de temporalidades probado, clásico o no.
+temporalidad superior, en cualquiera de las variantes probadas): no hay
+evidencia de que mejore el resultado ya conocido en ningún par de
+temporalidades probado, clásico o no, y a partir de 30m directamente no
+hay muestra para evaluarlo con los datos disponibles (se necesitaría
+mucho más historial).
