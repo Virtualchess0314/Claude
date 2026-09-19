@@ -1,0 +1,98 @@
+Pedido del usuario: en vez de esperar el fade (mecha + cierre adentro),
+entrar directo cuando AlphaTrend cambia de régimen (flip), a favor de la
+nueva tendencia -motivado por un ejemplo visual (captura de chart) donde
+un flip bajista recorre un tramo grande matando el pivot de compra en el
+camino.
+
+Ojo con la captura: es un único ejemplo del lado bueno de la
+distribución. `runs/2026-09-19_post_kill_runup.txt` ya mostró que la
+mediana de los tramos que matan el pivot es CHICA (~0.5R) y que los
+tramos grandes son la minoría (asociados, de hecho, a que el pivot se
+vuelve a tocar antes de seguir, no a que se mate). Este backtest entra a
+TODOS los flips genuinos sin filtrar por eso, dejando que el stop/exit
+reales decidan -así que mide el resultado agregado real, no el caso
+lindo de un solo gráfico.
+
+Mecánica (`analyze_alphatrend_flip_entry.py`, reusa
+detect_alphatrend_flips/filter_genuine_flips y el mismo modelo de costos
+de engine.py): entrada a mercado al cierre del flip, SL apoyado en el
+Pivot Point SuperTrend vigente +/- buffer de ATR, salida por TP fijo o
+trailing (AlphaTrend/Pivot) o EOD.
+
+## Resultado 1: TP fijo -no sirve
+
+Con TP fijo (probado R=1.0 a 3.0) el resultado es malo o inconsistente
+en las 3 temporalidades con muestra decente (1m/2m/5m): PF de test casi
+siempre por debajo de 1.0. Explicación: sin salida reactiva, muchas
+operaciones aguantan larguísimo (avg_bars_held 60-80 en 1m) esperando un
+TP lejano mientras el precio va y viene -exactamente el problema que
+already se vio con "Trailing AlphaTrend" en mecha_fade, pero acá
+agravado porque no hay filtro de calidad de entrada (fade) que descarte
+las señales malas de antemano.
+
+## Resultado 2: Trailing Pivot -tampoco sirve
+
+Banda demasiado ancha para esta entrada: aguanta operaciones larguísimo
+(30-53 velas) sin cortar las malas, PF de test entre 0.14 y 0.60 en
+todas las temporalidades probadas. Lo que funcionaba como salida para
+mecha_fade (banda ancha, tolera ruido, deja correr ganadoras) acá deja
+correr también las PERDEDORAS porque no hay filtro de entrada que las
+descarte antes.
+
+## Resultado 3: SL chico (0.25xATR) + Trailing AlphaTrend -sí hay señal
+
+Barrido de sl_buffer_atr (0.0/0.1/0.25/0.5/1.0) x 6 variantes de salida
+(TP 1/1.5/2/3R, trailing AT, trailing Pivot) x 4 temporalidades = 88
+combinaciones con muestra suficiente (train>=20, test>=10). Sólo 5/88
+pasan train_pf>1 Y test_pf>1 (~5.7%, en línea con lo esperable por puro
+azar si no hubiera ventaja real) -PERO 3 de esas 5 son el MISMO combo
+(sl_buffer_atr=0.25, trailing_exit_source='at') en tres temporalidades
+distintas e independientes (1m, 2m, 5m), no combos sueltos dispersos.
+Eso es una señal más fuerte que "un hit aislado por casualidad".
+
+  TF   train_n  train_pf  train_exp   test_n  test_pf  test_exp
+  1m   199      1.15      +0.022      74      1.57     +0.113
+  2m   51       1.65      +0.109      31      1.18     +0.031
+  5m   57       1.23      +0.038      41      1.14     +0.021
+
+Todas positivas y >1 en train Y test, en las 3 temporalidades. Muestra
+razonable en 1m (273 operaciones train+test), más chica en 2m/5m
+(82 y 98). 15m no entra en la tabla por muestra insuficiente (sólo 15
+operaciones train con este filtro de min_segment_bars=3) y 240m tiene un
+problema aparte: el position sizing por $ fijo (max_risk_usd) da qty=0
+en casi todas las señales porque el riesgo en puntos es enorme en ese
+timeframe (backtest de 6.5 años, ATR en puntos muy distinto entre 2020 y
+2026) -no es que no haya señales, es que el sizing de dólares no es
+compatible con ese rango de datos.
+
+## Interpretación
+
+- Win rate bajo (26-42%) con expectativa positiva chica -perfil típico
+  de sistema de tendencia: muchas pérdidas chicas (SL 0.25xATR, ajustado)
+  y algunas ganadoras que corren gracias al trailing.
+  Contraste interesante con mecha_fade: ACÁ la ventaja aparece en
+  timeframes bajos (1m/2m/5m) y NO en 15m -exactamente al revés de la
+  mejor configuración de mecha_fade (que sólo funcionaba en 15m). Tiene
+  sentido: una entrada de continuación al flip necesita reaccionar rápido
+  (SL de 0.25xATR es chico), algo que se ajusta mejor a temporalidades
+  con más ruido de corto plazo donde el AlphaTrend flipea seguido.
+- La expectativa es chica (+0.02R a +0.11R por operación) -antes de
+  operar esto en real habría que sumar bien los costos reales
+  (comisión+slippage, ya incluidos acá) y ver si sobrevive a fricciones
+  mayores, y probablemente ampliar la muestra (más meses de datos) dado
+  que 2m/5m tienen menos de 100 operaciones combinadas.
+
+## Conclusión
+
+No se descarta la idea de "entrar al flip" -al contrario, con el ajuste
+correcto (SL chico apoyado en el pivot roto + trailing de AlphaTrend, NO
+Pivot) muestra la ventaja más consistente entre timeframes vista hasta
+ahora en todo el proyecto (1m, 2m y 5m simultáneamente, vs sólo 15m en
+mecha_fade). Pendiente: sumarle filtros/mejoras (ej. sesión, sólo
+long/short, tamaño de muestra más grande) antes de confiar en operarla,
+y decidir si conviene combinarla con la mecha_fade original o dejarla
+como una estrategia aparte (la mecánica de entrada es opuesta: fade vs
+continuación).
+
+Implementación: `analyze_alphatrend_flip_entry.py`
+    python3 analyze_alphatrend_flip_entry.py datos.csv --sl-buffer-atr 0.25 --trailing-exit-source at

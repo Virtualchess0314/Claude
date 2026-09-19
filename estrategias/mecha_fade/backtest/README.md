@@ -224,6 +224,19 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   construido todavía): entrada al flip de AlphaTrend confirmada recién
   cuando el precio hace retest del pivot roto, en vez de fade o de
   apostar al kill.
+- **Segunda estrategia (continuación, no fade): entrar directo al flip
+  de AlphaTrend.** Con TP fijo o trailing de Pivot no funciona (aguanta
+  operaciones larguísimo sin cortar las malas). Pero **SL chico
+  (`sl_buffer_atr=0.25`) + salida por trailing del propio AlphaTrend**
+  (`trailing_exit_source='at'`) muestra ventaja consistente (train_pf Y
+  test_pf > 1) simultáneamente en **1m, 2m y 5m** — al revés que
+  mecha_fade, cuya única ventaja encontrada es específica de 15m.
+  Expectativa chica (+0.02R a +0.11R por operación, win rate 26-42%,
+  perfil típico de sistema de tendencia). 15m no tiene muestra
+  suficiente con este filtro y 240m tiene un problema de sizing (riesgo
+  en puntos demasiado grande para `max_risk_usd` fijo). Ver
+  `runs/2026-09-19_alphatrend_flip_entry.txt` y
+  `analyze_alphatrend_flip_entry.py`.
 
 ## Qué mirar en el resultado
 
