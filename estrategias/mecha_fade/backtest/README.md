@@ -316,16 +316,21 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   de color de pivot + salida por TP fijo o por reversión de la NUBE
   (no del pivot). Ver `runs/2026-09-19_pivot_confirms_as_exit.txt`.
 - **⚠️ Confirmación de la temporalidad siguiente — sin evidencia
-  suficiente, CERRADO.** Idea del usuario: con la entrada ya validada,
-  mirar la temporalidad más alta (1m→2m, 2m→5m, 5m→15m, 15m→240m) y dar
-  más recorrido (sin TP, trailing por reversión de nube) si el precio
-  también supera su nube ahí; si no, TP conservador. Resultado: 3/56
-  combinaciones (5.4%, apenas sobre el azar), las 3 concentradas en un
-  solo par (5m confirmado por 15m, muestra chica de 21-24 operaciones,
-  train mucho mejor que test — perfil de sobreajuste). El par con más
-  muestra y mejor resultado sin este filtro (1m) da 0/16 acá — agregar
-  la confirmación de temporalidad alta no mejora nada, empeora el
-  resultado ya conocido. Ver `runs/2026-09-19_htf_confirmation.txt` y
+  suficiente en NINGUNA variante, CERRADO.** Idea del usuario: con la
+  entrada ya validada, mirar la temporalidad más alta y dar más
+  recorrido (sin TP, trailing por reversión de nube) si el precio
+  también supera su nube ahí; si no, TP conservador. Probado con pares
+  "consecutivos" de datos nativos (1m→2m, 2m→5m, 5m→15m, 15m→240m):
+  3/56 combinaciones (5.4%, apenas sobre el azar), concentradas en un
+  solo par y con perfil de sobreajuste (train mucho mejor que test).
+  Probado de nuevo con la escalera clásica completa (1-2-3-5-10-15-30-60,
+  re-muestreando donde no había CSV nativo): **1/80 (1.25%, por debajo
+  del azar)**, un único hit aislado sin acompañamiento de ningún par
+  vecino, y 30m→60m sin ninguna operación (muestra insuficiente). En
+  ambas rondas, el par con más muestra y mejor resultado sin este
+  filtro (entradas en 1m) da 0/16 — agregar la confirmación de
+  temporalidad alta no mejora nada, empeora el resultado ya conocido.
+  Ver `runs/2026-09-19_htf_confirmation.txt` y
   `analyze_htf_confirmation.py`.
 
 ## Qué mirar en el resultado

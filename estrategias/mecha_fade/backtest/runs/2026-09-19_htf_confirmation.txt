@@ -61,3 +61,38 @@ conclusiones del par 5m→15m.
 
 Implementación: `analyze_htf_confirmation.py`
     python3 analyze_htf_confirmation.py datos_bajos.csv datos_altos.csv --bar-seconds-high 900
+
+## Segunda vuelta: escalera completa 1-2-3-5-10-15-30-60
+
+El usuario aclaró que la "temporalidad siguiente" es la escalera
+clásica (1, 2, 3, 5, 10, 15, 30, 60 minutos), no simplemente el próximo
+CSV disponible. No hay datos nativos de 3m/10m/30m/60m -se generaron
+re-muestreando (agregando OHLC, método ya validado contra el CSV real
+de 15m) desde 1m (-> 3m), 5m (-> 10m) y 15m (-> 30m, 60m).
+
+Pares probados: 1m→2m, 2m→3m, 3m→5m, 5m→10m, 10m→15m, 15m→30m,
+30m→60m. Mismo barrido (sl_atr_mult x tp_r_mult_pre, 16 combos por par,
+80 en total con muestra suficiente):
+
+  Par         combos   pasan
+  1m->2m      16       0
+  2m->3m      16       0
+  3m->5m      16       0
+  5m->10m     16       0
+  10m->15m    8        0
+  15m->30m    8        1
+  30m->60m    0        0 (0 operaciones -sin señales suficientes en 30m/60m con estos datos)
+
+**1/80 (1.25%)** -por DEBAJO de lo esperable por puro azar (~5%). El
+único hit (15m confirmado por 30m: train PF=1.43 n=52, test PF=1.34
+n=18) es aislado, sin acompañamiento de ningún par vecino, y con
+muestra chica. No hay ninguna base para sostener esta idea con la
+escalera completa tampoco -el resultado es, si acaso, más débil que el
+de la primera vuelta (pares "consecutivos" con datos nativos).
+
+## Conclusión final
+
+Se cierra definitivamente esta línea de investigación (confirmación de
+temporalidad superior, en cualquiera de sus dos variantes probadas):
+no hay evidencia de que mejore el resultado ya conocido en ningún par
+de temporalidades probado, clásico o no.
