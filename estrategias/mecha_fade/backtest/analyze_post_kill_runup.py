@@ -1,23 +1,24 @@
 """
 Sigue a analyze_alphatrend_kills_pivot.py: si al flipear el AlphaTrend el
-precio "mata" al Pivot (nunca lo vuelve a tocar durante ese tramo -ver
-docstring de ese script para la definición de "kill"), la pregunta natural
-es hasta dónde tiende a llegar el precio después. Esto es lo que se
+Pivot Point SuperTrend "muere" (su propio color termina flipeando a favor
+de la nueva tendencia -no "el precio vuelve a tocar tal nivel", ver
+docstring de test_ppst_pivot_kill en ese script), la pregunta natural es
+hasta dónde tiende a llegar el precio después. Esto es lo que se
 necesitaría para calibrar una entrada al FLIP de AlphaTrend (SL chico
 apoyado en el Pivot recién roto, en vez de esperar la mecha de fade) y un
 target/trailing acorde a ese recorrido típico.
 
-Para cada flip genuino de AlphaTrend:
+Para cada flip de AlphaTrend con pivot de color CONTRARIO (ver
+--allow-same-color-pivot):
   - entrada hipotética = close[flip_bar], dirección = nuevo régimen.
-  - riesgo (1R) = |entrada - nivel de Pivot en el momento del flip| (el
-    Pivot recién roto es el stop natural: si se vuelve a tocar, la idea
-    de "kill" ya se invalidó).
+  - riesgo (1R) = |entrada - nivel de Pivot en el momento del flip|.
   - se mide el MFE (Maximum Favorable Excursion) del tramo completo hasta
     el próximo flip, tanto en múltiplos de R como en múltiplos de ATR.
-  - se separa el resultado en tramos donde el pivot quedó "muerto"
-    (killed=True, igual que en analyze_alphatrend_kills_pivot.py) vs
-    donde se lo volvió a tocar (killed=False), para ver si "matar" el
-    pivot de verdad se asocia a recorridos más largos.
+  - se separa el resultado en tramos donde el pivot MURIÓ (killed=True:
+    su color llegó a igualar el nuevo régimen en algún momento del
+    tramo) vs donde nunca lo hizo (killed=False, sigue terco todo el
+    tramo), para ver si "matar" el pivot de verdad se asocia a
+    recorridos más largos.
 
 Uso:
     python3 analyze_post_kill_runup.py datos.csv
@@ -59,12 +60,13 @@ def measure_runups(df: pd.DataFrame, regime: np.ndarray, flips: np.ndarray, p: P
             continue  # pivot pegado al precio: R indefinido, no sirve de referencia
 
         seg_end = flips[idx + 1] if idx + 1 < len(flips) else n
+        target = regime[flip_i]
         mfe = 0.0
-        touched_pivot = False
+        pivot_flipped = False
         bars_to_1r = bars_to_2r = bars_to_3r = np.nan
         for j in range(flip_i + 1, seg_end):
-            if l[j] <= level <= h[j]:
-                touched_pivot = True
+            if not np.isnan(piv_trend[j]) and piv_trend[j] == target:
+                pivot_flipped = True
             excursion = (h[j] - entry) if is_long else (entry - l[j])
             if excursion > mfe:
                 mfe = excursion
@@ -82,7 +84,7 @@ def measure_runups(df: pd.DataFrame, regime: np.ndarray, flips: np.ndarray, p: P
             "entry": entry, "pivot_level": level, "risk_pts": risk,
             "seg_len_bars": seg_end - flip_i,
             "mfe_pts": mfe, "mfe_r": mfe / risk, "mfe_atr": mfe / atr_i,
-            "killed": not touched_pivot,
+            "killed": pivot_flipped,
             "bars_to_1r": bars_to_1r, "bars_to_2r": bars_to_2r, "bars_to_3r": bars_to_3r,
         })
     return pd.DataFrame(rows)

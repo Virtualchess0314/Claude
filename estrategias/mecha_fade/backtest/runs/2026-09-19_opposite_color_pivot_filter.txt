@@ -103,3 +103,23 @@ Implementación: `--require-opposite-color-pivot` en
 analyze_alphatrend_flip_entry.py, `require_opposite_color` (default
 True) en analyze_alphatrend_kills_pivot.test_ppst_pivot_kill y
 analyze_post_kill_runup.measure_runups.
+
+## ⚠️ CORRECCIÓN (mismo día): la definición de "killed" en este archivo
+   estaba mal, ver runs/2026-09-19_pivot_flip_definition_fix.txt
+
+Los números de kill rate y de recorrido killed/no-killed de este
+archivo (19-29% de kill rate, killed nunca llega a 1R, no-killed
+siempre llega a 1R) usaban "killed = el precio nunca vuelve a tocar el
+valor congelado del pivot al momento del flip". El usuario aclaró que
+"matar" es que el PIVOT MISMO flipea de color (así funciona el
+indicador) -no que se toque un valor de precio congelado. Con la
+definición corregida el kill rate es 63-74% (no 19-29%) y los rótulos
+killed/no-killed quedan EXACTAMENTE AL REVÉS: killed (el pivot SÍ
+flipea) es el caso de recorrido GRANDE (mediana 4.5-5R, 99-100% llega a
+1R), no-killed (el pivot se mantiene terco) es el de recorrido CHICO
+(mediana 0.5-0.65R, 17-28% llega a 1R). El filtro de color de pivot
+como condición de ENTRADA (--require-opposite-color-pivot, el resultado
+de 15/90 combinaciones más abajo) NO se ve afectado por esta corrección
+-sigue siendo válido tal cual, porque filtra por el color del pivot AL
+MOMENTO del flip, no por si después "muere" o no. Ver el archivo nuevo
+para el detalle completo.

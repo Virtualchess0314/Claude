@@ -261,11 +261,7 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   la nube. Sólo cuenta "matar" un pivot de color CONTRARIO a la nube
   nueva (el remanente de la tendencia vieja) — los de mismo color ya
   están alineados, no es el mismo fenómeno, y antes se contaban
-  mezclados. Con este filtro: el kill rate baja a 19-29% (antes ~50%) —
-  la mayoría de las veces (71-81%) el precio SÍ retestea el pivot viejo
-  antes de seguir. La brecha killed/no-killed se vuelve casi binaria:
-  killed nunca llega a 1R (0-2.8%), no-killed SIEMPRE llega a 1R (100%),
-  en las 5 temporalidades. Backtesteado como filtro de entrada real
+  mezclados. Backtesteado como filtro de entrada real
   (`--require-opposite-color-pivot`): **15/90 combinaciones pasan
   train_pf>1 Y test_pf>1 (16.7%, vs ~5-7% esperable por azar)**,
   repartidas en 4 temporalidades (1m: 9/30, 2m: 2/24, 5m: 3/24, 15m:
@@ -275,6 +271,24 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   (n=62, +0.15R), test PF=1.42 (n=35, +0.11R). Ver
   `runs/2026-09-19_opposite_color_pivot_filter.txt`. Pendiente: ampliar
   muestra y revisar sensibilidad a costos antes de operar.
+- **⚠️ Corrección: "matar" el pivot es que el PIVOT MISMO flipea de
+  color, no que el precio vuelve a tocar tal nivel** (aclarado por el
+  usuario). El Pivot Point SuperTrend cambia de color cuando el cierre
+  cruza su banda -eso es "morir/convertirse", no "volver a tocar un
+  valor congelado" (la línea del pivot se mueve vela a vela). Corregido
+  en `test_ppst_pivot_kill()` y `measure_runups()`. Con la definición
+  correcta, el resultado es mucho más limpio e intuitivo: el kill rate
+  vuelve a ~63-74% (cerca del hallazgo original del usuario), y la
+  separación por recorrido es casi perfecta — cuando el pivot SÍ flipea
+  (confirma la nueva tendencia), el recorrido siempre llega a 1R
+  (99-100%, mediana 4.5-5R); cuando se mantiene terco (nunca confirma),
+  casi nunca pasa de 1R (17-28%, mediana 0.5-0.65R). Consistente en las
+  5 temporalidades. Esto valida el mecanismo que el usuario tenía en
+  mente: el pivot confirmando la tendencia ES la señal de que el
+  movimiento va a correr. Abre una línea de entrada más precisa, todavía
+  no backtesteada como regla operable: entrar recién cuando el PIVOT
+  TAMBIÉN FLIPEA (no al flip crudo de AlphaTrend). Ver
+  `runs/2026-09-19_pivot_flip_definition_fix.txt`.
 
 ## Qué mirar en el resultado
 

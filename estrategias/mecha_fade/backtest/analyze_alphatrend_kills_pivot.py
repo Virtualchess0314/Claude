@@ -152,40 +152,42 @@ def test_swing_pivot_kill(df: pd.DataFrame, regime: np.ndarray, flips: np.ndarra
 def test_ppst_pivot_kill(df: pd.DataFrame, regime: np.ndarray, flips: np.ndarray, p: Params,
                           require_opposite_color: bool = True) -> dict:
     """
-    "Pivot" = Pivot Point SuperTrend real. Se toma el valor de la línea
-    en el momento del flip de AlphaTrend como nivel en juego, y se
-    revisa si el precio la vuelve a tocar antes del próximo flip.
+    "Pivot" = Pivot Point SuperTrend real, que tiene su PROPIO color/
+    trend (soporte=1, resistencia=-1), independiente del color de la
+    nube de AlphaTrend. "Matar" el pivot = el pivot mismo FLIPEA (cambia
+    de color) a favor de la nueva tendencia -aclarado por el usuario:
+    no es "el precio vuelve a tocar tal nivel de precio", es "el
+    indicador Pivot Point SuperTrend cambia de color porque el precio
+    cerró más allá de su banda" (así es como funciona el indicador,
+    ver pivot_point_supertrend()). Se revisa si `piv_trend` llega a
+    igualar `regime[flip_i]` en algún momento antes del próximo flip de
+    AlphaTrend -si nunca lo hace, el pivot "sobrevive" terco todo el
+    tramo (no killed); si lo hace, el pivot "muere/se convierte" (killed).
 
     `require_opposite_color` (default True, sugerido por el usuario):
-    el Pivot Point SuperTrend tiene su PROPIO color/trend (soporte=1,
-    resistencia=-1), independiente del color de la nube de AlphaTrend.
-    Sólo tiene sentido hablar de "matar" el pivot cuando, al momento del
+    sólo tiene sentido hablar de "matar" el pivot cuando, al momento del
     flip, el pivot todavía tiene el color CONTRARIO al nuevo color de la
-    nube -es el remanente de la tendencia vieja que la nueva tendencia
-    tiene que invalidar. Si el pivot YA es del mismo color que la nube
-    nueva, ya está alineado con la tendencia actual -no es el mismo
-    fenómeno, y antes se contaba por error. Verificado: es la mayoría de
-    los casos (57-63% en 1m/5m, ~49% en 15m).
+    nube -es el remanente de la tendencia vieja. Si el pivot YA es del
+    mismo color que la nube nueva, ya está alineado con la tendencia
+    actual -no es el mismo fenómeno.
     """
-    h, l = df["high"].to_numpy(), df["low"].to_numpy()
     piv_line, piv_trend = pivot_point_supertrend(df, p)
     n = len(df)
 
     results = []
     for idx, flip_i in enumerate(flips):
-        level = piv_line[flip_i]
-        if np.isnan(level):
+        if np.isnan(piv_trend[flip_i]):
             continue
-        if require_opposite_color:
-            if np.isnan(piv_trend[flip_i]) or piv_trend[flip_i] == regime[flip_i]:
-                continue
+        if require_opposite_color and piv_trend[flip_i] == regime[flip_i]:
+            continue
         seg_end = flips[idx + 1] if idx + 1 < len(flips) else n
-        touched = False
+        target = regime[flip_i]
+        pivot_flipped = False
         for j in range(flip_i + 1, seg_end):
-            if l[j] <= level <= h[j]:
-                touched = True
+            if not np.isnan(piv_trend[j]) and piv_trend[j] == target:
+                pivot_flipped = True
                 break
-        results.append({"flip_bar": flip_i, "level": level, "seg_len": seg_end - flip_i, "killed": not touched})
+        results.append({"flip_bar": flip_i, "level": piv_line[flip_i], "seg_len": seg_end - flip_i, "killed": pivot_flipped})
     return summarize_kill_results(results)
 
 
@@ -233,7 +235,7 @@ def main():
     r1 = test_ppst_pivot_kill(df, regime, flips, p, require_opposite_color=not args.allow_same_color_pivot)
     print(f"Flips testeados (con Pivot disponible): {r1['n_flips_tested']}")
     if r1["n_flips_tested"] > 0:
-        print(f"Pivot 'muerto' (nunca vuelto a tocar) en: {r1['n_killed']} ({r1['pct_killed']:.1f}%)")
+        print(f"Pivot 'muerto' (flipeó a favor de la nueva tendencia) en: {r1['n_killed']} ({r1['pct_killed']:.1f}%)")
         print(f"Duración promedio del tramo: {r1['avg_seg_len_bars']:.1f} velas")
 
     print(f"\n=== Pivot SWING genérico (fractal, left=right={args.swing_length}) ===")

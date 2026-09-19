@@ -1,0 +1,71 @@
+Corrección del usuario: "matar" el pivot no es que el precio vuelva a
+tocar tal nivel de precio -es que el PIVOT MISMO FLIPEA (cambia de
+color) porque el precio cerró más allá de su banda. Así es como
+funciona el indicador Pivot Point SuperTrend: su color/trend cambia
+cuando el cierre cruza la banda contraria (ver pivot_point_supertrend()
+en engine.py). La versión anterior de kills_pivot/post_kill_runup medía
+si el precio volvía a tocar el VALOR CONGELADO del pivot en el momento
+del flip -algo relacionado pero distinto, porque la línea del pivot se
+mueve (ratchet) vela a vela, así que "tocar el valor viejo" y "el
+indicador cambia de color" no son el mismo evento.
+
+Corregido en test_ppst_pivot_kill() y measure_runups(): ahora "killed"
+= el `piv_trend` llega a igualar el nuevo régimen de AlphaTrend en algún
+momento antes del próximo flip (el pivot viejo se "muere/convierte" a
+favor de la tendencia nueva). "No killed" = el pivot se mantiene terco
+(nunca flipea) durante todo el tramo.
+
+## Kill rate corregido (con require_opposite_color=True, el filtro de
+   color contrario ya vigente)
+
+  TF     n testeados   % el pivot SÍ flipea (killed=True)
+  1m     216            73.6%
+  2m     124            62.9%
+  5m     162            64.8%
+  15m    123            65.9%
+  240m   197            66.0%
+
+Esto vuelve a estar cerca del hallazgo ORIGINAL del usuario (67-85%,
+runs/2026-09-17_alphatrend_kills_pivot.txt) -pero ahora con la
+metodología corregida en TODOS los pasos (régimen por pendiente, filtro
+de color de pivot, y definición de "kill" como flip del indicador, no
+como toque de un valor congelado).
+
+## Recorrido -ahora COMPLETAMENTE intuitivo (runs/2026-09-19_post_kill_runup.txt actualizado)
+
+  TF     killed(=SÍ flipea) mediana(R)  killed %≥1R   no-killed(terco) mediana(R)  no-killed %≥1R
+  1m     4.60                            100.0%         0.65                        25.9%
+  2m     4.96                            100.0%         0.58                        26.1%
+  5m     4.72                            100.0%         0.59                        28.1%
+  15m    4.74                            100.0%         0.54                        16.7%
+  240m   4.56                            99.2%           0.65                        25.4%
+
+Se invirtió el rótulo respecto al hallazgo anterior (que estaba definido
+al revés) pero el resultado ahora es MUCHO más limpio e intuitivo:
+cuando el pivot viejo efectivamente se "muere" (flipea, confirmando la
+nueva tendencia), el recorrido SIEMPRE llega a 1R (99-100%) y la mediana
+es de 4.5-5R. Cuando el pivot se mantiene terco (nunca confirma), el
+recorrido casi nunca pasa de 1R (17-28%) y la mediana es de sólo
+0.5-0.65R. Consistente en las 5 temporalidades, con una separación casi
+perfecta.
+
+## Interpretación
+
+Esto valida el mecanismo que el usuario tenía en mente desde el
+principio: el pivot flipeando a favor de la nueva tendencia ES la
+confirmación de que el movimiento es real y va a correr. El AlphaTrend
+flip solo (sin que el pivot lo confirme después) es una señal débil que
+generalmente no llega a nada.
+
+Esto abre una línea de entrada más precisa y todavía no backtesteada
+como regla operable: en vez de entrar al flip crudo de AlphaTrend (con
+o sin filtro de color de pivot al momento del flip), esperar a que el
+PIVOT TAMBIÉN FLIPEE (se confirme la tendencia) antes de entrar -sería
+literalmente operar el evento que más se asocia con recorridos grandes
+(mediana 4.5-5R, 99-100% llega a 1R). El costo esperable: menos señales
+todavía (sólo ~63-74% de los flips de AlphaTrend califican) y entrada
+más tardía (después de que el pivot confirme, en vez de al primer flip).
+
+Pendiente: construir y backtestear con plata real esta entrada
+("esperar confirmación del pivot") con la misma disciplina train/test y
+filtro causal que el resto del proyecto.
