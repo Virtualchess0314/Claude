@@ -1,0 +1,82 @@
+Primer backtest de la estrategia "acumulación pre-sesión + ruptura +
+promediadas" (ver README.md para las reglas completas y los supuestos
+documentados). Barrido: session_open_hour (3/8/12/18, hora NY) x
+lookback_hours (1/2/3/4) x confirm_fraction (0.5 fijo) x max_adds
+(0/1/2/3) x add_step_atr_mult (0.5/1.0/1.5) = 192 combinaciones, sobre
+las 4 temporalidades con datos reales de MNQ.
+
+## Resultado por temporalidad
+
+Esta estrategia dispara COMO MUCHO 1 operación por día (por sesión
+elegida) -mucho menos frecuente que cualquier otra cosa backtesteada en
+el proyecto hasta ahora. Esto se nota directo en la disponibilidad de
+muestra:
+
+  TF    días de calendario   combos con muestra (min 10 train, 5 test)   pasan
+  1m    ~12                   0                                            0
+  2m    ~42                  36                                             0
+  5m    ~54                  36                                             0
+  15m   ~150                144                                            32 (22.2%)
+
+Sólo 15m tiene calendario suficiente como para juntar aunque sea una
+muestra mínima. 1m/2m/5m quedan directamente sin conclusión posible -no
+es que la estrategia "no funcione" ahí, es que no hay muestra para
+saberlo con sólo 12-54 días de datos.
+
+## Detalle de 15m: 32/144 pasan (22.2%), repartidos parejo en 2 sesiones
+
+  session_open_hour   combos que pasan
+  3.0  (Londres)        16
+  12.0 (NY, convención del proyecto)   16
+  8.0  (overlap)         0
+  18.0 (Asia)            0
+
+No concentrado en un solo horario -aparece tanto en Londres como en
+"NY", lo cual es un signo saludable (no es un fluke de un solo caso).
+Promedio de expectativa entre los 32 que pasan: train +0.18R, test
++0.45R (test más alto que train, no el patrón típico de sobreajuste).
+
+Mejor caso individual: session_open_hour=3.0, lookback_hours=2.0,
+confirm_fraction=0.5, max_adds=1, add_step_atr_mult=1.5: train PF=1.50
+(n=23, +0.34R), test PF=3.33 (n=8, +1.13R).
+
+⚠️ PERO los tamaños de muestra son chicos: train entre 14 y 36
+operaciones, test entre 6 y 13 -mucho menores a los 90-138 operaciones
+por combo que sostenían los hallazgos "que pasan" del resto del
+proyecto (mecha_fade). Con test_n=8 y PF=3+ el resultado es vistoso pero
+estadísticamente débil -unas pocas operaciones ganadoras grandes (el
+propio diseño de RR 1:4 hace que un puñado de aciertos domine el
+resultado).
+
+## Validación out-of-sample: NQ 15m (remuestreado del NQ 1m, 2026-09-06 a 09-18)
+
+Se resampleó a 15m el mismo archivo NQ 1m usado para la validación OOS
+de mecha_fade (ventana de calendario nueva, no usada para elegir
+parámetros). Se probaron los 13 mejores combos de 15m:
+
+  **11 de 13 mantienen PF>1** en el período nuevo (PF entre 1.4 y 5.5).
+
+Pero con **n=2 a 5 operaciones** cada uno -12 días de calendario dan
+apenas 2-5 ciclos completos de "una vez por día" para esta estrategia.
+A diferencia de la validación OOS de mecha_fade (que sí tenía ~100+
+operaciones y pudo desenmascarar la fragilidad real de los combos de
+1m), acá la muestra es demasiado chica para que este resultado sea
+tranquilizador NI alarmante -no prueba nada en ninguna dirección.
+
+## Conclusión
+
+Implementación coherente con la descripción del usuario. El resultado
+en 15m es prometedor en la dirección esperada (PF alto, expectativa
+positiva, repartido en 2 sesiones distintas -no un pico aislado), pero
+la estructura de "máximo 1 trade/día" de esta estrategia hace que
+incluso la mejor temporalidad disponible (150 días de 15m) dé una
+muestra demasiado chica para tener la misma confianza que el resto del
+proyecto. No se recomienda operar ninguna combinación de parámetros
+todavía.
+
+Pendiente: conseguir mucho más historial de 5m/15m (ideal 1-3 años,
+por ejemplo exportando desde ATAS con la ventana de días ampliada -ver
+la conversación sobre exportar datos de ATAS) antes de sacar
+conclusiones definitivas.
+
+Implementación: `engine.py` (simulate/Params), `optimize.py` (barrido).
