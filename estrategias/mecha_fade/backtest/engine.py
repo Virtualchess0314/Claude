@@ -158,6 +158,18 @@ class Params:
     entry_start_hour: float | None = None
     entry_end_hour: float | None = None
 
+    # Filtro de alineación con la tendencia (pedido del usuario tras ver
+    # que fades contra una tendencia fuerte terminan en mecha más grande
+    # en contra o en breakout en vez de reversión). Reutiliza los dos
+    # hallazgos más sólidos de la línea de investigación del flip de
+    # AlphaTrend: sólo fadear WICKS que van A FAVOR del régimen de
+    # AlphaTrend vigente (`require_regime_align`), y/o donde el Pivot
+    # Point SuperTrend todavía sea del color CONTRARIO al régimen -el
+    # filtro más fuerte de todo el proyecto- (`require_opposite_pivot`).
+    # Ver runs/2026-09-20_regime_aligned_wick_fade.txt.
+    require_regime_align: bool = False
+    require_opposite_pivot: bool = False
+
     # Costos reales
     commission_round_turn_usd: float = 3.50  # confirmado Tradovate/Tradeify
     slippage_ticks: float = 1.0
@@ -231,6 +243,30 @@ def alpha_trend(df: pd.DataFrame, p: Params, volume_available: bool) -> np.ndarr
         else:
             at[i] = min(down_t[i], prev) if not np.isnan(prev) else down_t[i]
     return at
+
+
+def alphatrend_regime(df: pd.DataFrame, p: Params, volume_available: bool) -> np.ndarray:
+    """
+    Régimen de AlphaTrend por PENDIENTE (+1 nube verde/alcista, -1 roja/
+    bajista) -misma definición validada en
+    analyze_alphatrend_kills_pivot.detect_alphatrend_flips del propio
+    proyecto (comparar AlphaTrend[i] vs AlphaTrend[i-2], no "cierre vs
+    línea": esa definición es ~5x más ruidosa). Se usa para el filtro
+    `Params.require_regime_align` -ver runs/2026-09-20_regime_aligned_wick_fade.txt.
+    """
+    at = alpha_trend(df, p, volume_available)
+    n = len(df)
+    regime = np.full(n, np.nan)
+    for i in range(n):
+        if i < 2 or np.isnan(at[i]) or np.isnan(at[i - 2]):
+            continue
+        if at[i] > at[i - 2]:
+            regime[i] = 1.0
+        elif at[i] < at[i - 2]:
+            regime[i] = -1.0
+        else:
+            regime[i] = regime[i - 1] if not np.isnan(regime[i - 1]) else np.nan
+    return regime
 
 
 def pivots(high: np.ndarray, low: np.ndarray, left: int, right: int) -> tuple[np.ndarray, np.ndarray]:
@@ -428,7 +464,8 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
     volume_available = "volume" in df.columns
 
     alpha = alpha_trend(df, p, volume_available)
-    piv_line, _piv_trend = pivot_point_supertrend(df, p)
+    piv_line, piv_trend = pivot_point_supertrend(df, p)
+    regime = alphatrend_regime(df, p, volume_available) if (p.require_regime_align or p.require_opposite_pivot) else None
 
     atrpoi = wilder_atr(df["high"], df["low"], df["close"], p.diy_atr_len)
     demand_top, demand_bottom, supply_top, supply_bottom, demand_id, supply_id = supply_demand_zones(h, l, c, atrpoi, p)
@@ -569,6 +606,29 @@ def simulate(df: pd.DataFrame, p: Params) -> tuple[pd.DataFrame, dict]:
                     long_diy = False
                 elif long_diy:
                     demand_tested_id = demand_id[i]
+
+            if p.require_regime_align and not np.isnan(regime[i]):
+                # sólo fadear wicks A FAVOR del régimen vigente de
+                # AlphaTrend -evita fades contra una tendencia fuerte
+                # (la que termina en mecha más grande en contra o en
+                # breakout en vez de reversión)
+                if regime[i] != 1.0:
+                    long_at = long_piv = long_diy = False
+                if regime[i] != -1.0:
+                    short_at = short_piv = short_diy = False
+            elif p.require_regime_align:
+                long_at = long_piv = long_diy = short_at = short_piv = short_diy = False
+
+            if p.require_opposite_pivot and not np.isnan(piv_trend[i]):
+                # el Pivot Point SuperTrend todavía debe ser del color
+                # CONTRARIO al régimen -el filtro más fuerte de toda la
+                # línea de investigación del flip de AlphaTrend
+                if piv_trend[i] == 1.0:
+                    long_at = long_piv = long_diy = False
+                if piv_trend[i] == -1.0:
+                    short_at = short_piv = short_diy = False
+            elif p.require_opposite_pivot:
+                long_at = long_piv = long_diy = short_at = short_piv = short_diy = False
 
             if p.only_source == "at":
                 long_piv = short_piv = long_diy = short_diy = False

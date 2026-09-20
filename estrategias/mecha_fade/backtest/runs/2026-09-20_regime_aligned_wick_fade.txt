@@ -1,0 +1,110 @@
+Pregunta del usuario (con captura de un gráfico real: un wick de compra
+gigante que arrancó un rally fuerte, y otro de venta poco antes que no
+funcionó -precio terminó rompiendo para arriba en vez de revertir):
+¿por qué esa mecha funcionó tan bien, y por qué al intentar entrar en
+otras mechas de reversión aparecen mechas más grandes en contra o
+termina siendo breakout en vez de reversión? ¿Qué se puede hacer para
+mejorar la estrategia de mechas con todo lo que ya se investigó?
+
+## Respuesta conceptual
+
+Con todo lo encontrado en esta sesión (regímenes de AlphaTrend, color
+del pivot, CRT), la explicación más consistente es: la estrategia
+ORIGINAL de mechas (mecha_fade) fadea CUALQUIER wick que toque un nivel
+(AlphaTrend/Pivot/DIY), sin mirar si esa mecha va A FAVOR o EN CONTRA de
+la tendencia de fondo. Una mecha que fadea EN CONTRA de una tendencia
+fuerte y ya establecida está apostando contra el impulso dominante -es
+la receta para que aparezca "otra mecha más grande en contra" o un
+breakout que la atropelle. La mecha que SÍ funcionó en la captura del
+usuario coincide, casi con certeza, con el patrón que ya se identificó
+como el más fuerte de todo el proyecto: ocurre justo cuando el régimen
+de AlphaTrend recién está cambiando (o ya cambió) a favor de esa mecha,
+con el Pivot Point SuperTrend todavía del color VIEJO -exactamente el
+evento validado en runs/2026-09-19_opposite_color_pivot_filter.txt y
+runs/2026-09-19_pivot_flip_definition_fix.txt como el que más se asocia
+a recorridos grandes (mediana 4.5-5R, 99-100% llega a 1R).
+
+## Filtro propuesto y backtesteado
+
+Se agregaron dos filtros a `engine.Params`/`simulate()` (la estrategia
+ORIGINAL de mecha_fade, no el flip-entry alternativo), reutilizando
+exactamente los dos hallazgos más sólidos de la línea de investigación
+del flip:
+
+  - `require_regime_align`: sólo fadear wicks que van A FAVOR del
+    régimen de AlphaTrend vigente en ese momento (comprar mechas hacia
+    abajo sólo si el régimen ya es alcista, vender mechas hacia arriba
+    sólo si ya es bajista).
+  - `require_opposite_pivot`: además, el Pivot Point SuperTrend debe
+    seguir siendo del color CONTRARIO al régimen -la señal de que el
+    cambio de tendencia es reciente/genuino, no una mecha en medio de
+    una tendencia ya madura.
+
+Barrido: sl_buffer_atr (0.1/0.25/0.5) x tp_r_mult (1.0/1.5/2.0/3.0),
+confluence_need=1 (cualquiera de los 3 indicadores), en las 5
+temporalidades, comparando 3 variantes:
+
+  Variante                    combos con muestra   pasan train_pf>1 y test_pf>1
+  Baseline (sin filtro)       60                    1   (1.7%)
+  + require_regime_align      60                    0   (0%, empeora)
+  + require_regime_align
+    + require_opposite_pivot  60                   **5  (8.3%)**
+
+## El baseline confirma por qué se abandonó esta línea
+
+En 240m (la muestra más robusta, 6.5 años), el baseline SIN filtros da
+**PF<1 en las 12 combinaciones probadas** (train 0.74-1.02, test
+0.79-0.97, expectativa siempre negativa), con muestra enorme (~1000-1200
+operaciones) -confirma que fadear CUALQUIER mecha, sin filtro de
+contexto, es un perdedor neto y consistente. Esto es justo lo que
+motivó abandonar el wick-fade puro y pasar a investigar el flip de
+AlphaTrend como entrada alternativa (ver historial del proyecto).
+
+`require_regime_align` SOLO empeora el resultado (0/60) -fadear a favor
+de una tendencia YA madura sigue sin filtrar el caso "mecha en medio de
+un tramo establecido", que puede fallar igual.
+
+## Con ambos filtros: 240m pasa a tener ventaja real
+
+Con `require_regime_align` + `require_opposite_pivot`, la muestra en
+240m cae de ~1000-1200 a ~100-130 operaciones (filtra a sólo las mechas
+que ocurren en el momento justo del cambio de régimen), y 4 de 12
+combos pasan a PF>1 en ambos lados:
+
+  sl_buf   tp    train (n, PF, exp)          test (n, PF, exp)
+  0.25     3.0   100, 1.11, +0.036R           31, 1.08, +0.028R
+  0.50     1.5   101, 1.08, +0.010R           31, 1.49, +0.116R
+  0.50     2.0    98, 1.19, +0.042R           30, 1.65, +0.156R   <- mejor
+  0.50     3.0    96, 1.20, +0.050R           29, 1.45, +0.103R
+
+En 2m también aparece 1 combo (sl_buf=0.25, tp=3.0: train PF=1.01
+n=51, test PF=1.11 n=24) -débil, pero en la misma dirección.
+
+## Interpretación
+
+El filtro combinado recrea, con una entrada distinta (a mercado en el
+CIERRE de la mecha, con SL apoyado en el extremo de la mecha -no en la
+vela del flip crudo), esencialmente el MISMO evento subyacente que ya
+se identificó como la mejor señal del proyecto (flip de AlphaTrend +
+pivot de color contrario). Esto es coherente, no una coincidencia: es
+evidencia adicional (con una mecánica de entrada distinta) de que el
+factor que de verdad separa una mecha que funciona de una que no es la
+alineación con un cambio de régimen genuino y reciente -no el nivel
+específico (AT/Pivot/DIY) que se usó para detectarla.
+
+## Conclusión
+
+Para mejorar la estrategia de mechas: no fadear cualquier wick que
+toque un nivel -exigir que esa mecha ocurra a favor de un régimen de
+AlphaTrend recién cambiado, con el pivot todavía del color viejo. Esto
+convierte una estrategia base perdedora (PF<1 consistente en 240m) en
+una con ventaja modesta pero real (PF 1.08-1.65 en test), concentrada
+en 240m -la temporalidad con más historia real. Sigue siendo una
+ventaja chica (como el resto de los hallazgos "buenos" de este
+proyecto), no recomendable operar con el mismo tamaño que sin filtro,
+pero es una mejora clara sobre la ausencia total de edge del wick-fade
+sin filtrar.
+
+Implementación: `require_regime_align`/`require_opposite_pivot` en
+`engine.Params`, filtro aplicado en `simulate()`, función
+`alphatrend_regime()` (misma definición ya validada por pendiente).

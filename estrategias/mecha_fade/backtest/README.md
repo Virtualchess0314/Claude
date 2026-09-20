@@ -426,6 +426,37 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   historia) es el más creíble del proyecto a la fecha. Ver
   `runs/2026-09-20_crt_vs_kill.txt`.
 
+## 🏆 Filtro de alineación con la tendencia para la estrategia ORIGINAL de mechas
+
+Pregunta del usuario viendo un ejemplo real: ¿por qué una mecha revierte
+espectacularmente y otras fallan (mecha más grande en contra, o
+breakout)? Se probó filtrar la estrategia ORIGINAL de wick-fade
+(`confluence_need`, no el flip-entry alternativo) exigiendo que la mecha
+vaya A FAVOR del régimen de AlphaTrend vigente (`require_regime_align`)
+y que el Pivot Point SuperTrend siga siendo del color CONTRARIO
+(`require_opposite_pivot`) -los dos filtros más sólidos de toda la línea
+de investigación del flip, aplicados acá a la entrada por mecha en vez
+de por flip crudo.
+
+**El baseline sin filtros confirma por qué se dejó de lado esta
+línea**: en 240m (la muestra más robusta, 6.5 años), las 12
+combinaciones de sl_buffer_atr x tp_r_mult dan PF<1 con expectativa
+siempre negativa, sobre ~1000-1200 operaciones -fadear cualquier mecha
+sin contexto de tendencia es un perdedor neto y consistente.
+`require_regime_align` solo empeora (0/60 combos pasan) -no alcanza con
+ir a favor de una tendencia ya madura. Agregando también
+`require_opposite_pivot` (la mecha debe ocurrir justo en el cambio de
+régimen, no en medio de un tramo ya establecido): la muestra en 240m
+cae a ~100-130 operaciones pero **4 de 12 combos pasan a PF>1 en train Y
+test** (mejor: sl_buffer_atr=0.5, tp_r_mult=2.0: train PF=1.19 n=98
++0.042R, test PF=1.65 n=30 +0.156R). Esto recrea, con una entrada
+distinta (a mercado en el cierre de la mecha, SL en su extremo), el
+MISMO evento identificado como la mejor señal del proyecto
+(`opposite_color_pivot_filter`) -evidencia adicional de que lo que
+separa una mecha ganadora de una perdedora es la alineación con un
+cambio de régimen genuino y reciente, no el indicador específico que
+detectó el nivel. Ver `runs/2026-09-20_regime_aligned_wick_fade.txt`.
+
 ## Qué mirar en el resultado
 
 Mismo criterio que los otros dos backtesters del repo: priorizar
