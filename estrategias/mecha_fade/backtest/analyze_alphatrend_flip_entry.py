@@ -319,7 +319,15 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr
                 })
                 open_pos = False
 
-        if not open_pos and i in flip_set and in_sess and dtrades < p.max_trades_per_day:
+        in_entry_window = True
+        if p.entry_start_hour is not None and p.entry_end_hour is not None:
+            hour_frac = local.hour + local.minute / 60.0
+            if p.entry_start_hour <= p.entry_end_hour:
+                in_entry_window = p.entry_start_hour <= hour_frac < p.entry_end_hour
+            else:
+                in_entry_window = hour_frac >= p.entry_start_hour or hour_frac < p.entry_end_hour
+
+        if not open_pos and i in flip_set and in_sess and in_entry_window and dtrades < p.max_trades_per_day:
             atr_i = atr_risk[i]
             if np.isnan(atr_i) or atr_i <= 0:
                 continue
@@ -384,6 +392,8 @@ def main():
                      help="sólo entra si, al momento del flip, el Pivot Point SuperTrend es de color CONTRARIO a la nube nueva (ver runs/2026-09-19_post_kill_runup.txt)")
     ap.add_argument("--max-pivot-distance-atr", type=float, default=None,
                      help="descarta la entrada si el pivot está a más de N x ATR del precio en el momento del flip (ver runs/2026-09-20_pivot_distance_vs_kill.txt)")
+    ap.add_argument("--entry-start-hour", type=float, default=None, help="hora de NY (0-24) desde la que se permite ABRIR una entrada nueva")
+    ap.add_argument("--entry-end-hour", type=float, default=None, help="hora de NY (0-24) hasta la que se permite ABRIR una entrada nueva")
     ap.add_argument("--pivot-confirmation", action="store_true",
                      help="en vez de entrar al flip crudo de AlphaTrend, esperar a que el PIVOT confirme (nazca del color de la tendencia actual) -ver runs/2026-09-19_pivot_flip_definition_fix.txt")
     ap.add_argument("--tick-size", type=float, default=0.25)
@@ -404,7 +414,8 @@ def main():
                max_risk_usd=args.max_risk_usd, point_value_usd=args.point_value_usd, max_qty=args.max_qty,
                max_trades_per_day=args.max_trades_per_day,
                commission_round_turn_usd=args.commission_round_turn_usd, slippage_ticks=args.slippage_ticks,
-               tick_size=args.tick_size, use_session=not args.no_session_close)
+               tick_size=args.tick_size, use_session=not args.no_session_close,
+               entry_start_hour=args.entry_start_hour, entry_end_hour=args.entry_end_hour)
 
     split_at = int(len(df) * args.train_frac)
     df_train, df_test = df.iloc[:split_at], df.iloc[split_at:]

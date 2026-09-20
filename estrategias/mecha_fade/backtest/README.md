@@ -351,6 +351,28 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   sólo recortan muestra y bajan el resultado a 9/9/0 — no mejora la
   estrategia ya validada. Ver `runs/2026-09-20_pivot_distance_vs_kill.txt`
   y `analyze_pivot_distance_vs_kill.py`.
+- **Winrate, ratios R:R<1 y filtro de sesión horaria en la entrada al
+  flip.** Winrate de los 15 combos que pasan: 30-61% según el TP usado
+  (coherente con cada R:R, sin sorpresas; avg_loss≈-1.0R por costos).
+  Probar ratios R:R por debajo de 1 (TP 0.5R/0.75R, arriesgar más de lo
+  que se busca ganar): **no ayuda, 2/30 (6.7%, cerca del azar)** — se
+  cierra sin evidencia. **🏆 Filtro de sesión NY (12-17 ET) — hallazgo
+  prometedor pero NO confirmado.** El mismo patrón que ya se veía en la
+  estrategia original (`runs/2026-09-17_session_performance.txt`) se
+  repite acá en las 4 temporalidades: NY sistemáticamente la mejor
+  sesión, Londres (03-08) la peor/negativa. Restringiendo TODAS las
+  entradas a esa ventana (`--entry-start-hour 12 --entry-end-hour 17`,
+  agregado a `simulate_flip_entries`, ya existía en `engine.Params` pero
+  no estaba conectado acá) el pass rate del barrido de 90 combos sube de
+  15/90 (16.7%) a **19/40 (47.5%)**, concentrado sobre todo en 1m
+  (18/28) con PF de hasta 2-3 y expectativas de +0.6R/operación. ⚠️ Con
+  una salvedad seria: el archivo de 1m sólo cubre ~12 días de calendario
+  — la mejora es demasiado grande para no sospechar sobreajuste con tan
+  poca muestra de calendario, y en 2m/5m/15m casi no queda muestra
+  evaluable con esta restricción (6/6/0 combos). Recomendado: conseguir
+  más meses de datos de 1m/2m/5m antes de tratar esto como mejora real,
+  no sólo como dirección de investigación válida. Ver
+  `runs/2026-09-20_session_winrate_rr_check.txt`.
 
 ## Qué mirar en el resultado
 
