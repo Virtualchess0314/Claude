@@ -475,6 +475,21 @@ detectó el nivel. Ver `runs/2026-09-20_regime_aligned_wick_fade.txt`.
   poco para resamplear a 240m). No reemplaza la entrada ya validada,
   pero es una variante a tener en el radar. Ver
   `runs/2026-09-20_ma_alignment_early_entry.txt`.
+- **⚠️ Refinamiento en 10m (AlphaTrend negativo + acercamiento al borde
+  + cierre>MA50 con MA10>MA20) — CERRADO, sin evidencia suficiente.**
+  Versión más específica de la idea anterior, con ejemplo real del
+  usuario: en vez de exigir las 3 medias alineadas, sólo un cruce
+  parcial (10 sobre 20) + cierre sobre la MA50, mientras AlphaTrend
+  seguía bajista. Probado en 10m remuestreado (54 días, sin CSV nativo).
+  El resultado agregado (long+short) pasa por muy poco (29/216 combos),
+  pero al aislar por dirección se desarma: el lado LONG -el del ejemplo
+  del usuario- da train PF=1.04 (breakeven) y **test PF=0.82
+  (negativo)**; el "pase" agregado era sólo el lado SHORT funcionando
+  bien en train (PF=2.64) sin sostenerse en test (PF=0.90). Nota
+  técnica: la condición de "acercarse al borde de la nube" (medida en
+  ATR contra la línea de AlphaTrend) no discriminó nada en la práctica
+  -la línea siempre está cerca del precio por diseño (ratchet de ATR).
+  Ver `runs/2026-09-20_alpha_edge_ma_cross.txt`.
 
 ## Qué mirar en el resultado
 

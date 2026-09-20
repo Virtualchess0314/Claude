@@ -1,0 +1,74 @@
+Refinamiento del usuario sobre la idea de las 3 medias (ver
+runs/2026-09-20_ma_alignment_early_entry.txt), con ejemplo concreto en
+10 minutos: en AlphaTrend negativo (nube roja), con el precio
+acercándose al borde de la nube, una vela que CIERRA por encima de la
+media de 50 con la media de 10 por encima de la de 20 (cruce PARCIAL,
+no las 3 alineadas como antes). Sin CSV nativo de 10m -remuestreado
+desde 5m (~54 días de historia).
+
+## Implementación
+
+`analyze_alpha_edge_ma_cross.py`: regime de AlphaTrend por pendiente
+(igual que el resto del proyecto), "acercarse al borde" definido como
+que el precio tocó (en las últimas `--approach-window` velas) una
+distancia <= `--approach-atr-mult` x ATR de la línea de AlphaTrend, y
+el gatillo es cierre>MA50 + MA10>MA20 (o el caso simétrico bajista).
+
+## Nota técnica: la condición de "acercarse al borde" no discriminó nada
+
+Al barrer `approach_window` (3/5/8) y `approach_atr_mult`
+(0.25/0.5/1.0), el conteo de señales NO CAMBIÓ ni una vez (40 long, 66
+short en los 9 combos probados) -la línea de AlphaTrend, al ser un
+ratchet de ATR muy pegado al precio, prácticamente SIEMPRE estuvo cerca
+en algún punto de esa ventana cuando se cumplen las otras condiciones
+(régimen bajista + cruce de medias). En la práctica, con esta
+formalización, la señal se reduce a: "régimen todavía bajista + cierre
+sobre la MA50 + MA10>MA20" -el "acercamiento al borde" no aportó filtro
+adicional. Puede ser que la definición de "borde" que tenía en mente el
+usuario sea otra (ej. relativa a un nivel dibujado a mano, no a la
+línea de AlphaTrend en sí) -a confirmar si se quiere afinar más.
+
+## Resultado agregado (long+short): pasa por muy poco, 29/216 combos
+
+Barrido sl_buffer_atr x tp_r_mult x approach_window x approach_atr_mult
+x con/sin filtro de pivot: 29 de 216 combos con muestra suficiente
+pasan train_pf>1 y test_pf>1 (13.4%), pero ninguno con margen amplio en
+test (mejor test PF ~1.2, la mayoría 1.0-1.1).
+
+## ⚠️ Aislado por dirección (long vs short): el caso LONG -el del ejemplo del usuario- NO se sostiene
+
+El mejor combo agregado (sl_buffer_atr=0.5, tp_r_mult=1.5, sin filtro
+de pivot: train PF=1.76, test PF=1.11) se desarma al separar por
+dirección:
+
+  Dirección   TRAIN (n, PF, exp)      TEST (n, PF, exp)
+  LONG         22, 1.04, +0.033R       16, 0.82, -0.105R
+  SHORT        39, 2.64, +0.494R       20, 0.90, -0.084R
+
+El resultado agregado que parecía pasar era enteramente producto del
+lado SHORT funcionando muy bien en TRAIN (PF=2.64) -pero eso NO se
+sostiene en TEST (PF=0.90). El lado LONG -que es específicamente el que
+describió el usuario con su ejemplo (AlphaTrend negativo, precio se
+acerca al borde, rompe con cierre>MA50 y MA10>MA20)- está prácticamente
+en breakeven en TRAIN (PF=1.04) y es NEGATIVO en TEST (PF=0.82,
+-0.105R). Ninguna de las dos direcciones, evaluada por separado, tiene
+una ventaja validada -el "pase" agregado era un artefacto de mezclar
+ambas direcciones.
+
+## Conclusión
+
+Con la formalización probada (SMA 10/20/50, cierre sobre/bajo MA50,
+cruce parcial 10 vs 20, "acercamiento" medido en ATR contra la línea de
+AlphaTrend), la regla específica del usuario -tal como la describió,
+con el ejemplo de AlphaTrend negativo y reversión a largo- **no muestra
+ventaja validada** sobre 10 minutos (54 días de historia, muestra
+modesta: 22 señales train, 16 test). Cerrado sin evidencia suficiente
+en esta formalización. Si se quiere insistir con la idea, ayudaría: (a)
+una definición más precisa de "acercarse al borde" (quizás relativa a
+un nivel/zona específica marcada a mano, no a la línea de AlphaTrend en
+sí, que ya está casi siempre cerca del precio por diseño), y (b) más
+meses de datos de 10m/5m para tener una muestra por dirección más
+grande que 16-22 operaciones.
+
+Implementación: `analyze_alpha_edge_ma_cross.py`
+    python3 analyze_alpha_edge_ma_cross.py datos_5m.csv --resample 10min
