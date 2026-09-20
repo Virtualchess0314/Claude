@@ -1,0 +1,112 @@
+Corrección del usuario: el límite de riesgo por posición (`max_risk_usd`)
+es $750, no $150 (el default que tenía `engine.Params` y los `--max-risk-usd`
+de `optimize.py`/`analyze_alphatrend_flip_entry.py` desde el principio del
+proyecto) ni $300.
+
+Cambiado en:
+  - `engine.py`: `Params.max_risk_usd` 150.0 -> 750.0
+  - `optimize.py` y `analyze_alphatrend_flip_entry.py`: default de
+    `--max-risk-usd` 150.0 -> 750.0
+
+## Esto NO es un ajuste cosmético -destapó un bug de sizing real
+
+La fórmula de tamaño de posición es
+`qty = min(max_qty, int(max_risk_usd / (risk_pts * point_value_usd)))`.
+Con `max_risk_usd=150` y `point_value_usd=2.0` (MNQ), cualquier trade
+cuyo riesgo en puntos superara **75 puntos** (150/2) quedaba con
+`qty=0` y se DESCARTABA en silencio (el código hace `if qty > 0:
+open_pos = True` -si da 0, simplemente no se abre la posición, sin
+aviso). Esto ya se había notado puntualmente para 240m ("240m sigue sin
+muestra por el problema de sizing", mencionado en
+runs/2026-09-19_opposite_color_pivot_filter.txt) pero no se había
+identificado la causa raíz ni corregido hasta ahora. Con
+`max_risk_usd=750` el umbral sube a 375 puntos -mucho más realista para
+el rango de ATR de este instrumento en cualquier temporalidad.
+
+Importante: el P&L en R (profit factor, winrate, expectancy_R) de cada
+trade INDIVIDUAL no depende de `qty` (se cancela en el cálculo -ver
+código), así que esto no cambia la proporción ganador/perdedor de los
+trades que YA se tomaban. Lo que cambia es qué CONJUNTO de trades se
+tomaba: con el default viejo, los flips con mayor riesgo en puntos
+(los SL más anchos, sobre todo en temporalidades altas) se descartaban
+enteros del backtest sin que nadie lo supiera.
+
+## Impacto en el hallazgo insignia (opposite-color-pivot filter)
+
+Se repitió el barrido completo (sl_atr_mult 1/1.5/2/3/4 x 6 salidas) en
+las 5 temporalidades con `max_risk_usd=750`:
+
+  TF     combos con muestra   pasan (antes, con el bug)   pasan (corregido)
+  1m     30                    9                           6
+  2m     30                    2                           1
+  5m     30                    3                           1
+  15m    30                    1                           0
+  240m   18                    0 (sin muestra)              7
+
+  **TOTAL: 15/138 (10.9%)** -antes se reportaba 15/90 (16.7%) porque
+  240m quedaba directamente afuera del barrido (sin muestra) y las
+  otras 4 temporalidades tenían un subconjunto de trades más favorable
+  (los de riesgo grande, ahora incluidos, resultaron ser en promedio
+  algo peores -por eso bajan de 9->6, 2->1, 3->1, 1->0).
+
+Sigue por encima del ~5-7% esperable por azar, pero el margen es menor
+de lo que se pensaba. La buena noticia: **240m -el dataset con más
+historia real del proyecto (6.5 años, contra 12 días-5 meses del
+resto)- ahora SÍ tiene muestra y pasa 7/18 combos**, todos con
+sl_atr_mult chico (1.0-2.0) y casi cualquier salida (TP2/3/5R o
+reversión de nube dan resultados casi idénticos en este caso -el TP casi
+nunca se alcanza antes que el SL o el cierre de sesión, así que da lo
+mismo cuál se use). PF modesto pero consistente: train 1.02-1.35, test
+1.02-1.15 -menos vistoso que los combos de 1m, pero mucho más creíble
+por la cantidad de años e independencia de condiciones de mercado que
+cubre esa muestra.
+
+## Combos que pasan con el valor corregido
+
+  TF    SL(xATR)  Salida    Train (n, PF, exp)        Test (n, PF, exp)
+  1m    1.0       TP2.0     119, 1.09, +0.04R         51, 1.38, +0.21R
+  1m    1.5       TP1.5     116, 1.05, +0.03R         51, 1.39, +0.19R
+  1m    1.5       TP3.0      98, 1.02, +0.01R         45, 1.38, +0.25R
+  1m    3.0       TP1.0      93, 1.12, +0.06R         43, 1.27, +0.11R
+  1m    3.0       TP1.5      76, 1.09, +0.05R         38, 1.06, +0.03R
+  1m    4.0       TP1.0      66, 1.26, +0.11R         37, 1.23, +0.10R
+  2m    3.0       TP1.0      53, 1.01, +0.01R         23, 1.25, +0.09R
+  5m    4.0       TP1.0      60, 1.03, +0.01R         32, 1.08, +0.03R
+  240m  1.0       TP2.0      63, 1.09, +0.04R         35, 1.03, +0.01R
+  240m  1.0       TP3.0      63, 1.12, +0.05R         35, 1.15, +0.05R
+  240m  1.0       TP5.0      63, 1.12, +0.05R         35, 1.07, +0.02R
+  240m  1.0       regime     63, 1.12, +0.05R         35, 1.07, +0.02R
+  240m  1.5       TP1.0      63, 1.07, +0.02R         32, 1.02, +0.01R
+  240m  1.5       TP2.0      63, 1.25, +0.05R         32, 1.05, +0.02R
+  240m  2.0       TP1.5      59, 1.35, +0.04R         24, 1.12, -0.00R
+
+## ⚠️ Alcance de esta corrección
+
+Este bug de sizing (`max_risk_usd` default demasiado chico para el
+riesgo real en puntos de temporalidades altas) estaba presente desde el
+principio del proyecto -afecta potencialmente a TODOS los análisis
+anteriores que usaron `Params()` sin pasar `--max-risk-usd` explícito,
+incluyendo la estrategia ORIGINAL mecha_fade (`optimize.py`) y los
+análisis posteriores de sesión/winrate/R:R
+(runs/2026-09-20_session_winrate_rr_check.txt) y la validación
+out-of-sample con NQ (runs/2026-09-20_oos_validation_nq.txt). No se
+re-corrieron todos esos archivos -las conclusiones CUALITATIVAS
+(dirección del efecto de sesión, que los ratios R:R<1 no ayudan, que
+los combos de 1m no se sostienen out-of-sample) casi seguro se
+mantienen porque el bug sólo descarta trades de riesgo muy grande
+(afecta más a temporalidades altas como 240m que a 1m/2m/5m, donde el
+ATR en puntos rara vez supera 75), pero los números EXACTOS de esos
+archivos deberían tratarse como aproximados hasta una re-corrida
+dedicada si se necesita precisión.
+
+## Conclusión
+
+El hallazgo del filtro de color de pivot sigue de pie (15/138, sobre el
+azar), pero más modesto de lo reportado antes en 1m-15m, y con un
+aporte nuevo e inesperado en 240m que -por su muestra de calendario
+mucho más larga- podría ser el resultado más confiable de todo el
+proyecto hasta ahora, aunque con una ventaja más chica (PF 1.02-1.35).
+Recomendado: priorizar 240m (y quizás 15m con más historia) sobre 1m
+para cualquier decisión operativa, dado lo aprendido en
+runs/2026-09-20_oos_validation_nq.txt sobre la fragilidad de los
+combos de 1m con poca muestra de calendario.

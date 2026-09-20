@@ -128,7 +128,7 @@ class Params:
     atr_len: int = 14
     sl_buffer_atr: float = 0.10
     tp_r_mult: float = 1.5
-    max_risk_usd: float = 150.0
+    max_risk_usd: float = 750.0
     point_value_usd: float = 2.0
     max_qty: int = 40
 

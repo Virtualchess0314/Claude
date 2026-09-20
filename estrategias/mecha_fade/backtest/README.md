@@ -282,6 +282,22 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   en sí (idea del filtro de color de pivot) sigue siendo razonable, pero
   ningún combo específico de parámetros debería tratarse como validado
   todavía. Ver `runs/2026-09-20_oos_validation_nq.txt`.
+  **⚠️ CORRECCIÓN DE FONDO: `max_risk_usd` era $150 por default, el
+  usuario aclaró que el límite real es $750.** No es cosmético -destapó
+  un bug de sizing: con $150 y `point_value_usd=2.0`, cualquier trade
+  con riesgo >75 puntos quedaba con `qty=0` y se descartaba en
+  silencio (afecta sobre todo a temporalidades altas -por esto 240m
+  "nunca tenía muestra suficiente", algo ya notado pero no
+  diagnosticado). Corregido en `engine.Params` y los `--max-risk-usd`
+  de `optimize.py`/`analyze_alphatrend_flip_entry.py`. Re-corrido el
+  barrido completo en las 5 temporalidades: **15/138 (10.9%, antes
+  15/90=16.7% porque 240m quedaba afuera)** — sigue sobre el azar pero
+  con menos margen en 1m-15m (9→6, 2→1, 3→1, 1→0); a cambio, **240m
+  pasa a tener muestra y aporta 7/18 combos**, con PF más modesto
+  (1.02-1.35) pero sobre 6.5 años de historia real -mucho más creíble
+  que los combos de 1m dada la fragilidad ya encontrada en la
+  validación out-of-sample. Recomendado priorizar 240m/15m sobre 1m de
+  acá en más. Ver `runs/2026-09-20_max_risk_usd_correction.txt`.
 - **⚠️ Corrección: "matar" el pivot es que el PIVOT MISMO flipea de
   color, no que el precio vuelve a tocar tal nivel** (aclarado por el
   usuario). El Pivot Point SuperTrend cambia de color cuando el cierre

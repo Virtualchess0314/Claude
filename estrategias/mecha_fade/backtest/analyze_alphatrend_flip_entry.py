@@ -397,7 +397,7 @@ def main():
     ap.add_argument("--pivot-confirmation", action="store_true",
                      help="en vez de entrar al flip crudo de AlphaTrend, esperar a que el PIVOT confirme (nazca del color de la tendencia actual) -ver runs/2026-09-19_pivot_flip_definition_fix.txt")
     ap.add_argument("--tick-size", type=float, default=0.25)
-    ap.add_argument("--max-risk-usd", type=float, default=150.0)
+    ap.add_argument("--max-risk-usd", type=float, default=750.0)
     ap.add_argument("--point-value-usd", type=float, default=2.0)
     ap.add_argument("--max-qty", type=int, default=40)
     ap.add_argument("--max-trades-per-day", type=int, default=999)

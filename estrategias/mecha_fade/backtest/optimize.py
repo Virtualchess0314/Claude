@@ -53,7 +53,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--diy-atr-len", type=int, default=50)
     ap.add_argument("--diy-overlap-atr-mult", type=float, default=2.0)
     ap.add_argument("--atr-len", type=int, default=14)
-    ap.add_argument("--max-risk-usd", type=float, default=150.0)
+    ap.add_argument("--max-risk-usd", type=float, default=750.0)
     ap.add_argument("--point-value-usd", type=float, default=2.0)
     ap.add_argument("--max-qty", type=int, default=40)
     ap.add_argument("--max-trades-per-day", type=int, default=999)
