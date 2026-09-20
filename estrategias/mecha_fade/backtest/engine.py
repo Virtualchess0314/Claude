@@ -251,6 +251,42 @@ def pivots(high: np.ndarray, low: np.ndarray, left: int, right: int) -> tuple[np
     return piv_h, piv_l
 
 
+def detect_crt(df: pd.DataFrame) -> np.ndarray:
+    """
+    CRT (Candle Range Theory, metodología ICT): patrón de 3 velas que
+    explica por qué el precio a veces "se regresa" en vez de seguir de
+    largo hacia un nivel -pedido del usuario para entender la mecánica
+    detrás de por qué algunos flips de AlphaTrend "matan" el pivot
+    (siguen) y otros no (revierten).
+
+      1. Vela RANGO (i-2): define el rango [low, high] en juego.
+      2. Vela de MANIPULACIÓN (i-1): barre liquidez por FUERA de ese
+         rango (mecha más allá del high o del low de la vela rango) -la
+         "trampa" que atrapa a los que operaron el breakout.
+      3. Vela de DISTRIBUCIÓN/confirmación (i): cierra de vuelta DENTRO
+         del rango original, con cierre direccional (cierre>apertura
+         para alcista, cierre<apertura para bajista) -confirma que la
+         manipulación fue real y que el movimiento genuino va para el
+         otro lado.
+
+    Devuelve un array con +1 (CRT alcista confirmado en la vela i), -1
+    (CRT bajista) o 0 (nada) -causal por construcción, sólo usa las 3
+    velas ya cerradas hasta `i`.
+    """
+    o, h, l, c = df["open"].to_numpy(), df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
+    n = len(df)
+    crt = np.zeros(n)
+    for i in range(2, n):
+        range_lo, range_hi = l[i - 2], h[i - 2]
+        swept_low = l[i - 1] < range_lo
+        swept_high = h[i - 1] > range_hi
+        if swept_low and not swept_high and c[i] > range_lo and c[i] > o[i]:
+            crt[i] = 1.0
+        elif swept_high and not swept_low and c[i] < range_hi and c[i] < o[i]:
+            crt[i] = -1.0
+    return crt
+
+
 def pivot_point_supertrend(df: pd.DataFrame, p: Params) -> tuple[np.ndarray, np.ndarray]:
     """
     Pivot Point SuperTrend (indicador público, el que el usuario identificó

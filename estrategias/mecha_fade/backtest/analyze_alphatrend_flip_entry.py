@@ -50,7 +50,12 @@ import pandas as pd
 
 from analyze_alphatrend_kills_pivot import detect_alphatrend_flips
 from data import load_csv
-from engine import Params, _within_session, alpha_trend, pivot_point_supertrend, summarize, wilder_atr
+from engine import Params, _within_session, alpha_trend, detect_crt, pivot_point_supertrend, summarize, wilder_atr
+
+
+def crt_near_flip(crt: np.ndarray, flip_i: int, direction: float, window: int) -> bool:
+    lo = max(0, flip_i - window + 1)
+    return bool(np.any(crt[lo:flip_i + 1] == direction))
 
 
 def causal_confirmed_flips(regime: np.ndarray, confirm_bars: int) -> np.ndarray:
@@ -216,7 +221,8 @@ def simulate_pivot_confirmation_entries(df: pd.DataFrame, p: Params, sl_buffer_a
 
 def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr_mult: float,
                            require_opposite_color_pivot: bool = False,
-                           max_pivot_distance_atr: float | None = None) -> tuple[pd.DataFrame, dict]:
+                           max_pivot_distance_atr: float | None = None,
+                           crt_filter: str | None = None, crt_window: int = 3) -> tuple[pd.DataFrame, dict]:
     h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
     ts = df.index
     n = len(df)
@@ -225,6 +231,7 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr
     alpha = alpha_trend(df, p, volume_available)
     piv_line, piv_trend = pivot_point_supertrend(df, p)
     atr_risk = wilder_atr(df["high"], df["low"], df["close"], p.atr_len)
+    crt = detect_crt(df) if crt_filter is not None else None
     slip = p.slippage_ticks * p.tick_size
 
     regime, _flips_raw = detect_alphatrend_flips(df, p, volume_available)
@@ -343,6 +350,17 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr
                 distance_atr = abs(c[i] - piv_line[i]) / atr_i
                 if distance_atr > max_pivot_distance_atr:
                     continue
+            if crt_filter is not None:
+                # metodología ICT CRT (Candle Range Theory, ver
+                # engine.detect_crt): ¿hubo una manipulación/barrido de
+                # liquidez seguida de reclamo a favor de la nueva
+                # tendencia en las últimas `crt_window` velas? -ver
+                # runs/2026-09-20_crt_vs_kill.txt
+                has_crt = crt_near_flip(crt, i, regime[i], crt_window)
+                if crt_filter == "require" and not has_crt:
+                    continue
+                if crt_filter == "exclude" and has_crt:
+                    continue
             is_long = regime[i] == 1.0
             entry_signal_price = c[i]
             entry_price = entry_signal_price + slip if is_long else entry_signal_price - slip
@@ -394,6 +412,9 @@ def main():
                      help="descarta la entrada si el pivot está a más de N x ATR del precio en el momento del flip (ver runs/2026-09-20_pivot_distance_vs_kill.txt)")
     ap.add_argument("--entry-start-hour", type=float, default=None, help="hora de NY (0-24) desde la que se permite ABRIR una entrada nueva")
     ap.add_argument("--entry-end-hour", type=float, default=None, help="hora de NY (0-24) hasta la que se permite ABRIR una entrada nueva")
+    ap.add_argument("--crt-filter", choices=["require", "exclude"], default=None,
+                     help="'require': sólo entra si hubo un CRT (ICT Candle Range Theory) a favor de la nueva tendencia en las últimas --crt-window velas. 'exclude': lo contrario. Ver runs/2026-09-20_crt_vs_kill.txt")
+    ap.add_argument("--crt-window", type=int, default=3)
     ap.add_argument("--pivot-confirmation", action="store_true",
                      help="en vez de entrar al flip crudo de AlphaTrend, esperar a que el PIVOT confirme (nazca del color de la tendencia actual) -ver runs/2026-09-19_pivot_flip_definition_fix.txt")
     ap.add_argument("--tick-size", type=float, default=0.25)
@@ -426,8 +447,8 @@ def main():
         _, s_train = simulate_pivot_confirmation_entries(df_train, p, args.sl_atr_mult)
         _, s_test = simulate_pivot_confirmation_entries(df_test, p, args.sl_atr_mult)
     else:
-        _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot, args.max_pivot_distance_atr)
-        _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot, args.max_pivot_distance_atr)
+        _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot, args.max_pivot_distance_atr, args.crt_filter, args.crt_window)
+        _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot, args.max_pivot_distance_atr, args.crt_filter, args.crt_window)
 
     for label, s in [("TRAIN", s_train), ("TEST", s_test)]:
         print(f"\n{label}: trades={s['trades']}  win_rate={s['win_rate']*100:.1f}%  "

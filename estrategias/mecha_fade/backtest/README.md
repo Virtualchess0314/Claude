@@ -407,6 +407,24 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   mantiene mala en ambos períodos. La dirección general (evitar Londres,
   preferir NY/overlap) sobrevive a medias; el detalle fino, no. Ver
   `runs/2026-09-20_oos_validation_nq.txt`.
+- **🏆 Metodología ICT CRT (Candle Range Theory) — explica el mecanismo,
+  AL REVÉS de lo esperado, y mejora sustancialmente el filtro de
+  entrada.** CRT = patrón de 3 velas (rango / manipulación-barrido de
+  liquidez / distribución-reclamo, `engine.detect_crt()`). Contra la
+  intuición, un flip de AlphaTrend CON un CRT de respaldo reciente tiene
+  kill rate MÁS BAJO que uno sin él (en 3 de 5 temporalidades, robusto a
+  distintas ventanas de 3/5/7 velas) — un quiebre "limpio" sin trampa de
+  liquidez previa parece más decisivo que uno que vino precedido de un
+  barrido. Usado como filtro real (`--crt-filter exclude`, sólo entra si
+  NO hubo CRT reciente): el pass rate del barrido de 138 combos sube de
+  15 (10.9%) a **34 (24.6%)**, repartido en 1m (15/30), 2m (7/30) y
+  **240m (12/18, 67%)** — con expectativa de TEST más alta que la de
+  TRAIN en promedio, no el patrón típico de sobreajuste. Validado
+  out-of-sample con el archivo NQ 1m: la mejora en 1m NO sobrevive
+  (1/15 vs 0/15 del baseline, ambos negativos) — mismo diagnóstico de
+  fragilidad ya conocido para 1m. El resultado de 240m (6.5 años de
+  historia) es el más creíble del proyecto a la fecha. Ver
+  `runs/2026-09-20_crt_vs_kill.txt`.
 
 ## Qué mirar en el resultado
 
