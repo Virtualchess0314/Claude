@@ -271,6 +271,17 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   (n=62, +0.15R), test PF=1.42 (n=35, +0.11R). Ver
   `runs/2026-09-19_opposite_color_pivot_filter.txt`. Pendiente: ampliar
   muestra y revisar sensibilidad a costos antes de operar.
+  **⚠️ ACTUALIZACIÓN: validado out-of-sample con un archivo nuevo (NQ
+  1m, mismo instrumento, ventana de calendario distinta) y el resultado
+  NO se sostiene** — de los 9 combos de 1m que pasaban train Y test,
+  sólo 1 mantiene PF>1 en el período nuevo, y la expectativa promedio de
+  esos 9 pasa a ser NEGATIVA (-0.116R). El archivo de 1m sólo cubre ~12
+  días de calendario por período — demasiado poco para fijar parámetros
+  finos de SL/TP con confianza; combos "ganadores" en un período de 12
+  días pierden su ventaja casi por completo en el siguiente. La entrada
+  en sí (idea del filtro de color de pivot) sigue siendo razonable, pero
+  ningún combo específico de parámetros debería tratarse como validado
+  todavía. Ver `runs/2026-09-20_oos_validation_nq.txt`.
 - **⚠️ Corrección: "matar" el pivot es que el PIVOT MISMO flipea de
   color, no que el precio vuelve a tocar tal nivel** (aclarado por el
   usuario). El Pivot Point SuperTrend cambia de color cuando el cierre
@@ -373,6 +384,13 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   más meses de datos de 1m/2m/5m antes de tratar esto como mejora real,
   no sólo como dirección de investigación válida. Ver
   `runs/2026-09-20_session_winrate_rr_check.txt`.
+  **⚠️ La sospecha se confirmó**: validado con un archivo de NQ 1m
+  nuevo (misma ventana de 12 días pero fechas distintas), el "ganador"
+  claro cambia — Asia pasa de 2da mejor sesión a la peor, y el overlap
+  Londres/NY empata a NY como mejor sesión. Sólo Londres (03-08) se
+  mantiene mala en ambos períodos. La dirección general (evitar Londres,
+  preferir NY/overlap) sobrevive a medias; el detalle fino, no. Ver
+  `runs/2026-09-20_oos_validation_nq.txt`.
 
 ## Qué mirar en el resultado
 
