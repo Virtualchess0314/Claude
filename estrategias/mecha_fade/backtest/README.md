@@ -334,6 +334,23 @@ El CSV es el export de TradingView ("Export chart data") con al menos
   confirmación de temporalidad alta no mejora nada, empeora el
   resultado ya conocido. Ver `runs/2026-09-19_htf_confirmation.txt` y
   `analyze_htf_confirmation.py`.
+- **⚠️ Distancia pivot-precio al momento del flip — observación real,
+  sin uso práctico, CERRADO.** Idea del usuario: si el pivot está
+  exageradamente lejos del precio al momento del flip, es más probable
+  que otro flip de AlphaTrend resetee el tramo antes de que el precio lo
+  "busque". Confirmado como fenómeno estadístico: correlación negativa
+  y consistente en las 5 temporalidades entre distancia (en ATR) y
+  probabilidad de que el pivot se mate (r=-0.19 a -0.38). Pero la caída
+  de "MFE en R" que acompaña a esa distancia es mayormente un artefacto
+  mecánico (R usa la distancia como denominador) — controlando con MFE
+  en ATR, la correlación colapsa a casi cero (-0.14 a +0.13): el
+  movimiento absoluto de precio no depende realmente de esa distancia.
+  Probado como filtro real (`--max-pivot-distance-atr`) sobre el mismo
+  barrido de 90 combos que dio 15 pasan: un umbral laxo (3x ATR) no
+  cambia nada (siguen pasando 15), umbrales más agresivos (2x/1.5x/1x)
+  sólo recortan muestra y bajan el resultado a 9/9/0 — no mejora la
+  estrategia ya validada. Ver `runs/2026-09-20_pivot_distance_vs_kill.txt`
+  y `analyze_pivot_distance_vs_kill.py`.
 
 ## Qué mirar en el resultado
 

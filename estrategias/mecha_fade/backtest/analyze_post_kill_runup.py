@@ -81,7 +81,7 @@ def measure_runups(df: pd.DataFrame, regime: np.ndarray, flips: np.ndarray, p: P
 
         rows.append({
             "flip_bar": flip_i, "direction": "long" if is_long else "short",
-            "entry": entry, "pivot_level": level, "risk_pts": risk,
+            "entry": entry, "pivot_level": level, "risk_pts": risk, "risk_atr": risk / atr_i,
             "seg_len_bars": seg_end - flip_i,
             "mfe_pts": mfe, "mfe_r": mfe / risk, "mfe_atr": mfe / atr_i,
             "killed": pivot_flipped,

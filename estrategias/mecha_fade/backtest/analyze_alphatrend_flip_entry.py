@@ -215,7 +215,8 @@ def simulate_pivot_confirmation_entries(df: pd.DataFrame, p: Params, sl_buffer_a
 
 
 def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr_mult: float,
-                           require_opposite_color_pivot: bool = False) -> tuple[pd.DataFrame, dict]:
+                           require_opposite_color_pivot: bool = False,
+                           max_pivot_distance_atr: float | None = None) -> tuple[pd.DataFrame, dict]:
     h, l, c = df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy()
     ts = df.index
     n = len(df)
@@ -324,6 +325,16 @@ def simulate_flip_entries(df: pd.DataFrame, p: Params, confirm_bars: int, sl_atr
                 continue
             if require_opposite_color_pivot and (np.isnan(piv_trend[i]) or piv_trend[i] == regime[i]):
                 continue  # el pivot ya es del mismo color que la nube nueva -no cuenta (ver post_kill_runup)
+            if max_pivot_distance_atr is not None:
+                # hipótesis del usuario: si el pivot está exageradamente
+                # lejos del precio, es más probable que otro flip de
+                # AlphaTrend "resetee" el tramo antes de que el precio lo
+                # busque -ver runs/2026-09-20_pivot_distance_vs_kill.txt
+                if np.isnan(piv_line[i]):
+                    continue
+                distance_atr = abs(c[i] - piv_line[i]) / atr_i
+                if distance_atr > max_pivot_distance_atr:
+                    continue
             is_long = regime[i] == 1.0
             entry_signal_price = c[i]
             entry_price = entry_signal_price + slip if is_long else entry_signal_price - slip
@@ -371,6 +382,8 @@ def main():
                      help="velas que el nuevo régimen debe sostenerse antes de confirmar la entrada (1=inmediato, causal)")
     ap.add_argument("--require-opposite-color-pivot", action="store_true",
                      help="sólo entra si, al momento del flip, el Pivot Point SuperTrend es de color CONTRARIO a la nube nueva (ver runs/2026-09-19_post_kill_runup.txt)")
+    ap.add_argument("--max-pivot-distance-atr", type=float, default=None,
+                     help="descarta la entrada si el pivot está a más de N x ATR del precio en el momento del flip (ver runs/2026-09-20_pivot_distance_vs_kill.txt)")
     ap.add_argument("--pivot-confirmation", action="store_true",
                      help="en vez de entrar al flip crudo de AlphaTrend, esperar a que el PIVOT confirme (nazca del color de la tendencia actual) -ver runs/2026-09-19_pivot_flip_definition_fix.txt")
     ap.add_argument("--tick-size", type=float, default=0.25)
@@ -402,8 +415,8 @@ def main():
         _, s_train = simulate_pivot_confirmation_entries(df_train, p, args.sl_atr_mult)
         _, s_test = simulate_pivot_confirmation_entries(df_test, p, args.sl_atr_mult)
     else:
-        _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot)
-        _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot)
+        _, s_train = simulate_flip_entries(df_train, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot, args.max_pivot_distance_atr)
+        _, s_test = simulate_flip_entries(df_test, p, args.confirm_bars, args.sl_atr_mult, args.require_opposite_color_pivot, args.max_pivot_distance_atr)
 
     for label, s in [("TRAIN", s_train), ("TEST", s_test)]:
         print(f"\n{label}: trades={s['trades']}  win_rate={s['win_rate']*100:.1f}%  "
