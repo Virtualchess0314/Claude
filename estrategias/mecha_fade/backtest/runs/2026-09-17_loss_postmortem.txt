@@ -1,0 +1,90 @@
+Pregunta del usuario: de las operaciones que fallan (SL), ¿qué pasa
+después? ¿El precio vuelve a bajar con otra vela a tomar liquidez (y el
+fade en realidad tenía razón, solo que el stop estaba muy ajustado), o
+simplemente rompe el indicador y sigue de largo (breakout real)?
+
+Método: `analyze_loss_postmortem.py`. Para cada operación perdedora,
+mira los próximos 20 velas después del stop y clasifica:
+  - barrido_tardio: el precio SÍ llega a como mínimo 1R en la dirección
+    original de la operación -el fade tenía razón, el stop nos sacó
+    antes de tiempo.
+  - breakout_real: el precio sigue de largo EN CONTRA (nuevo extremo
+    más allá del SL, sin volver nunca al precio de entrada) -no era un
+    barrido de liquidez, era una ruptura real.
+  - sin_resolucion: ninguna de las dos cosas pasa claramente en la
+    ventana.
+
+## Resultado (señal cruda, cualquiera de los 3 indicadores, defaults)
+
+              barrido_tardio   breakout_real   sin_resolucion
+  1m               49.1%           39.1%           11.8%
+  2m               57.2%           34.9%            7.9%
+  5m               56.7%           35.9%            7.3%
+  15m              63.1%           33.6%            3.3%
+  240m             78.3%           21.7%            0.0%
+
+De los "breakout_real", 85-95% coinciden con un flip de régimen real
+del indicador que generó la señal (AlphaTrend y/o Pivot cambiaron de
+lado cerca del stop) -confirma que sí son rupturas genuinas, no ruido
+mal clasificado.
+
+## Hallazgo clave: LA MAYORÍA de las pérdidas son por STOP DEMASIADO
+   AJUSTADO, no porque la idea esté mal
+
+En las 5 temporalidades, entre el 49% y el 78% de las operaciones
+perdedoras HABRÍAN llegado a al menos 1R a favor si el stop hubiera
+aguantado un poco más. Esto se sostiene incluso en la configuración ya
+identificada como la mejor (AlphaTrend solo, 15m, at_mult=2.0,
+tp_r_mult=2.0, sl_buffer_atr=0.20): 59.7% barrido_tardio, 36.5%
+breakout_real (100% de estos con flip de régimen confirmado).
+
+## Consecuencia: ensanchar el stop (sl_buffer_atr) mejora bastante la
+   configuración ya conocida como buena
+
+Barrido de sl_buffer_atr en AlphaTrend solo / 15m / at_mult=2.0,
+train/test 70/30:
+
+  sl_buffer  tp   train_pf  train_n   test_pf  test_n
+    0.10    2.5    1.042     324       1.036    141
+    0.20    2.0    1.037     287       1.108    136
+    0.30    2.0    1.064     256       1.096    115
+    0.50    2.5    1.044     183       1.227     91
+    0.75    2.5    1.292     139       1.208     71
+    1.00    2.0    1.511      96       1.343     55
+    1.00    2.5    1.401      93       1.597     55
+    1.50    2.0    1.647      45       0.777     26   <- muestra ya muy chica, se rompe
+    2.00    2.5    1.620      26       1.224      9   <- muestra insuficiente
+
+El punto óptimo (mejor equilibrio ventaja/muestra) parece estar en
+**sl_buffer_atr≈1.0, tp_r_mult=2.0-2.5**: profit factor 1.3-1.6 en
+TREN y TEST de forma consistente, con ~90-100 operaciones en train y
+~55 en test sobre 5 meses -bastante mejor que el 1.0-1.1 encontrado
+antes con sl_buffer=0.2-0.3, y con una muestra todavía razonable (no
+tan chica como para descartarla, pero menor que antes -documentar esto
+como límite: no se probó con más historial que 5 meses).
+
+Más allá de sl_buffer=1.0 la muestra se reduce demasiado (26-48
+operaciones) y el resultado se vuelve inconsistente train/test -no
+extrapolar más allá de ese punto sin más datos.
+
+## Importante: esto NO es un arreglo universal
+
+Repetido el mismo barrido de sl_buffer sobre la señal CRUDA (cualquiera
+de los 3 indicadores, sin tunear at_mult) en 5m y 15m: ensanchar el
+stop ayuda de forma más débil e inconsistente -en 5m mejora hasta
+sl_buffer≈0.5-0.75 y después empeora; en 15m no hay mejora clara en
+ningún punto. El hallazgo de "ensanchar el stop ayuda mucho" está
+validado específicamente sobre la configuración ya afinada (AlphaTrend
+aislado, at_mult=2.0, 15m) -no es garantía de que funcione igual en la
+estrategia combinada sin antes limpiar también el ruido de Pivot/DIY.
+
+## Próximo paso sugerido
+
+Confirmar sl_buffer_atr≈1.0 / tp_r_mult≈2.0-2.5 como la nueva
+configuración de referencia (reemplaza a sl_buffer=0.2-0.3 encontrada
+antes) y correr el post-mortem sobre ESA configuración para ver si el
+% de barrido_tardio bajó como se esperaría. También vale la pena
+probar valores intermedios (0.85, 0.9, 1.1, 1.2) para afinar el óptimo
+exacto entre 0.75 y 1.5.
+
+Script: estrategias/mecha_fade/backtest/analyze_loss_postmortem.py

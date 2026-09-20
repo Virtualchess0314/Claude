@@ -1,0 +1,115 @@
+Pedido del usuario: aplicar la metodología ICT CRT (Candle Range Theory)
+para entender MEJOR el mecanismo detrás de por qué el precio a veces
+"se regresa" en vez de ir directo al pivot -en vez de sólo mirar la
+distancia (runs/2026-09-20_pivot_distance_vs_kill.txt, descartada como
+explicación), revisar si hubo o no una manipulación/barrido de liquidez
+genuina (CRT) respaldando el flip, y repasar TODAS las temporalidades.
+
+## Qué es CRT y cómo se implementó
+
+CRT (Candle Range Theory, ICT): patrón de 3 velas.
+  1. Vela RANGO: define un rango [low, high].
+  2. Vela de MANIPULACIÓN: barre liquidez por FUERA de ese rango (mecha
+     más allá del high o el low) -la "trampa".
+  3. Vela de DISTRIBUCIÓN: cierra de vuelta DENTRO del rango original,
+     con cierre direccional -confirma que la manipulación fue real.
+
+Implementado en `engine.detect_crt()` (causal, sólo usa velas ya
+cerradas). Se buscó si hubo un CRT a favor de la nueva tendencia en las
+últimas `--crt-window` velas antes/en cada flip de AlphaTrend con pivot
+de color contrario (filtro ya validado), en las 5 temporalidades
+nativas.
+
+## Parte 1: ¿el CRT explica por qué el pivot "muere" o no? SÍ, pero AL REVÉS de lo esperado
+
+Comparando %killed y MFE entre flips CON CRT de respaldo vs SIN él
+(ventana=3 velas):
+
+  TF     %killed CON CRT   %killed SIN CRT   diferencia
+  1m     65.6%              76.3%             -10.7pp
+  2m     59.4%              63.3%              -3.9pp
+  5m     67.4%              63.2%              +4.2pp
+  15m    71.4%              63.6%              +7.8pp
+  240m   63.8%              67.4%              -3.6pp
+
+En 3 de 5 temporalidades (1m, 2m, 240m) el kill rate es MÁS BAJO
+cuando hubo un CRT de respaldo -lo contrario de la intuición ("si hubo
+manipulación+reclamo, el movimiento debería ser más confiable"). Sólo
+5m/15m van en la dirección esperada, y débil. Se repitió con ventanas
+de 5 y 7 velas (1m/5m/240m): mismo patrón, robusto al tamaño de
+ventana -no es ruido de un umbral mal elegido.
+
+Interpretación: un AlphaTrend flip que NO viene precedido de un CRT
+(un quiebre "limpio", sin trampa de liquidez previa) parece ser una
+señal de tendencia más decisiva que uno que sí lo tiene (que podría
+reflejar precio todavía indeciso, peleando entre manipulación y
+distribución, con más probabilidad de necesitar otro barrido antes de
+definirse).
+
+## Parte 2: probado como filtro real de entrada -mejora sustancial
+
+Se agregó `--crt-filter require|exclude` (+ `--crt-window`) a
+`analyze_alphatrend_flip_entry.py`. Repetido el barrido completo (5
+sl_atr_mult x 6 salidas x 5 temporalidades, 138 combos con muestra
+suficiente, con `max_risk_usd=750` ya corregido):
+
+  Filtro                combos con muestra   pasan train_pf>1 y test_pf>1
+  (baseline, sin CRT)   138                   15  (10.9%)
+  --crt-filter require  108                    8  (7.4%, peor)
+  --crt-filter exclude  138                   **34 (24.6%, más del doble)**
+
+`require` (sólo entrar si HUBO un CRT de respaldo) empeora el
+resultado, consistente con la Parte 1. `exclude` (sólo entrar si NO
+hubo un CRT reciente -el "quiebre limpio") lo mejora sustancialmente:
+
+  TF     pasan (baseline)   pasan (crt-exclude)
+  1m     6/30                15/30  (50%)
+  2m     1/30                 7/30
+  5m     1/30                 0/30
+  15m    0/30                 0/30
+  240m   7/18                12/18  (67%)
+
+Repartido en 3 temporalidades (no uno solo), y con expectativa de TEST
+más alta que la de TRAIN en promedio (+0.132R vs +0.105R) -no es el
+patrón típico de sobreajuste (train mucho mejor que test).
+
+**240m es el resultado más fuerte**: 12 de 18 combos pasan (67%), casi
+cualquier SL chico (1.0-1.5x ATR) con casi cualquier salida funciona
+-train PF 1.06-1.49, test PF 1.10-1.23, sobre 6.5 años de historia real.
+
+## Parte 3: validación out-of-sample de los combos de 1m (NQ, otras fechas)
+
+Repitiendo la validación de runs/2026-09-20_oos_validation_nq.txt: de
+los 15 combos de 1m que pasan con `--crt-filter exclude` en el archivo
+MNQ original, sólo **1/15 mantiene PF>1** en el período nuevo de NQ
+(2026-09-06 a 09-18), con expectativa promedio -0.175R (negativa). Es
+una mejora marginal sobre el baseline sin filtro CRT en ese mismo
+período (0/15 pasan, -0.185R), pero NO resuelve el problema de fondo: el
+filtro CRT ayuda un poco pero no rescata la fragilidad ya conocida de
+1m con sólo 12 días de calendario por archivo. El resultado de 240m no
+se pudo validar así (no hay un segundo archivo de 240m disponible), pero
+al estar basado en 6.5 años de un solo archivo con partición train/test
+real, ya tiene un nivel de robustez muy superior al de cualquier
+hallazgo de 1m.
+
+## Conclusión
+
+La metodología ICT CRT SÍ aporta información real sobre el mecanismo,
+pero al revés de la intuición inicial: un flip de AlphaTrend "limpio"
+(sin manipulación de liquidez reciente) tiende a seguir mejor que uno
+que vino precedido de un barrido -quizás porque el barrido señala
+indecisión en vez de convicción. Usado como filtro (`--crt-filter
+exclude`), mejora el pass rate global de 10.9% a 24.6%, con el aporte
+más creíble en 240m (67% de los combos pasan, sobre la muestra de
+calendario más larga del proyecto). En 1m, aunque también mejora
+(6→15 de 30), sigue sin sobrevivir la validación out-of-sample -mismo
+diagnóstico que ya se tenía: 1m no alcanza para fijar parámetros con
+confianza, filtro CRT incluido.
+
+Recomendado: incorporar `--crt-filter exclude` como parte de la
+configuración recomendada, con foco en 240m (y quizás ampliar a 15m/5m
+con más historia) en vez de 1m.
+
+Implementación: `detect_crt()` en `engine.py`,
+`analyze_crt_vs_kill.py` (Parte 1), `--crt-filter`/`--crt-window` en
+`analyze_alphatrend_flip_entry.py` (Partes 2 y 3).

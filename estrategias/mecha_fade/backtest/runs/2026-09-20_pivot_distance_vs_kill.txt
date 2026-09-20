@@ -1,0 +1,109 @@
+Hipótesis del usuario: si el Pivot Point SuperTrend está EXAGERADAMENTE
+LEJOS del precio en el momento del flip de AlphaTrend, es más probable
+que el precio no llegue a "buscarlo" (matarlo -ver
+runs/2026-09-19_pivot_flip_definition_fix.txt) antes de que ocurra OTRO
+flip de AlphaTrend que resetee el tramo.
+
+Herramienta: analyze_pivot_distance_vs_kill.py, reutilizando
+measure_runups() (analyze_post_kill_runup.py) que ya calcula, por cada
+flip con pivot de color contrario (filtro ya validado): la distancia
+precio-pivot en el momento del flip (`risk_atr`, normalizada por ATR
+para comparar entre temporalidades/volatilidad) y si el pivot terminó
+"matándose" (`killed`) antes del próximo flip.
+
+## Parte 1: ¿la distancia predice si el pivot se mata? SÍ, y es consistente
+
+Correlación (distancia en ATR) vs (killed 0/1), en las 5 temporalidades
+nativas (todas negativas, todas de tamaño moderado):
+
+  TF     r (killed)   n
+  1m     -0.193        199
+  2m     -0.318        122
+  5m     -0.287        160
+  15m    -0.381        123
+  240m   -0.244        196
+
+Por cuartiles de distancia (ejemplo 5m, patrón idéntico en las 5 TF):
+
+  cuartil distancia(ATR)  %killed  MFE mediana(R)
+  0.37 (más cerca)         82.5%    8.92
+  0.79                     65.0%    2.61
+  1.25                     60.0%    2.01
+  1.97 (más lejos)         50.0%    1.23
+
+Confirmado: cuanto más lejos está el pivot del precio al momento del
+flip, MENOS probable es que se termine matando antes de que otro flip
+de AlphaTrend resetee el tramo. Consistente y monótono en las 5
+temporalidades.
+
+## Parte 2: OJO -la caída en "MFE en R" de la tabla de arriba es en gran
+   parte un artefacto mecánico, no una caída real del movimiento
+
+R se define como MFE_puntos / distancia_puntos, y la distancia ES el
+denominador de esa misma cuenta -así que un pivot más lejano reduce R
+aunque el movimiento en puntos/ATR sea idéntico. Controlando por esto
+con `mfe_atr` (MFE normalizado por ATR, sin usar la distancia como
+denominador), la correlación con la distancia colapsa a casi cero en
+las 5 temporalidades:
+
+  TF     rho(distancia, MFE en R)   rho(distancia, MFE en ATR)
+  1m     -0.412                      +0.127
+  2m     -0.583                      -0.132
+  5m     -0.585                      -0.122
+  15m    -0.587                      -0.139
+  240m   -0.462                      +0.015
+
+Es decir: el movimiento ABSOLUTO de precio después del flip no depende
+mucho de qué tan lejos estaba el pivot -lo que cambia con la distancia
+es sólo la probabilidad de que el pivot llegue a confirmarse (Parte 1),
+no el tamaño del recorrido en sí.
+
+## Parte 3: ¿sirve como filtro de entrada en la estrategia ya validada?
+
+Se agregó `--max-pivot-distance-atr` a analyze_alphatrend_flip_entry.py:
+descarta la entrada si `|precio - pivot| / ATR` supera el umbral, en el
+momento del flip (mismo ATR que se usa para el SL). Se repitió el
+barrido EXACTO de runs/2026-09-19_opposite_color_pivot_filter.txt
+(sl_atr_mult 1/1.5/2/3/4 x 6 salidas x 4 temporalidades con muestra
+suficiente, 90 combos) con distintos umbrales:
+
+  umbral    combos con muestra   pasan train_pf>1 y test_pf>1
+  (sin filtro, baseline)  90     15
+  3.0x ATR                90     15  (mismos combos, casi sin cambios -filtra pocos outliers)
+  2.0x ATR                90      9
+  1.5x ATR                90      6
+  1.0x ATR                72      0
+
+Un umbral laxo (3.0x ATR) no cambia casi nada: el conjunto de combos
+que pasa es prácticamente el mismo, con conteos de operaciones casi
+idénticos (filtra sólo un puñado de casos extremos). Umbrales más
+agresivos (2.0/1.5/1.0x) degradan el resultado de forma directa -no
+mejoran el PF, sólo recortan muestra y sacan de la mezcla operaciones
+que en promedio eran tan buenas como las que quedan (consistente con la
+Parte 2: el tamaño del movimiento no depende realmente de la
+distancia).
+
+## Conclusión
+
+La observación del usuario es CIERTA como fenómeno estadístico: un
+pivot lejano reduce la probabilidad de que se "mate" antes del próximo
+flip (Parte 1), de forma consistente en las 5 temporalidades. Pero esto
+NO se traduce en una mejora accionable para la estrategia ya validada
+(entrada al flip + SL de ATR + salida por TP o reversión de nube):
+el tamaño del movimiento posterior no depende realmente de esa
+distancia (Parte 2, la caída de "R" es mayormente un artefacto de cómo
+se define R), y filtrar por ella sólo recorta muestra sin mejorar PF
+(Parte 3). Se cierra esta variante como "observación real, sin uso
+práctico en la estrategia actual" -mismo patrón que la confirmación de
+temporalidad superior (runs/2026-09-19_htf_confirmation.txt): un
+hallazgo interesante sobre la mecánica del indicador que no mejora el
+resultado ya conocido al intentar usarlo como filtro de entrada.
+
+El mejor resultado del proyecto sigue siendo el de
+runs/2026-09-19_opposite_color_pivot_filter.txt: flip de AlphaTrend +
+pivot de color contrario, SL de ATR, salida por TP fijo o reversión de
+nube -sin filtro de distancia.
+
+Implementación: `analyze_pivot_distance_vs_kill.py` (Partes 1 y 2),
+`--max-pivot-distance-atr` en `analyze_alphatrend_flip_entry.py`
+(Parte 3).

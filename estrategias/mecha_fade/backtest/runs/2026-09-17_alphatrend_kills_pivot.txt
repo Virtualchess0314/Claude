@@ -1,0 +1,58 @@
+Hipótesis del usuario: "cada vez que el precio cambia de AlphaTrend por
+un breakout previo, mata al pivot (el pivot nunca vuelve a ser tocado
+durante toda la vida de ese nuevo tramo de AlphaTrend)".
+
+⚠️ CORRECCIÓN (17/09, más tarde el mismo día): la primera versión de
+este análisis usaba una definición equivocada de "Pivot" (floor pivots
+de piso). El usuario mostró una captura del gráfico real e identificó
+la línea roja/verde escalonada como "el pivot" -eso es el indicador
+público "Pivot Point SuperTrend" (pivotes de swing + trailing stop tipo
+SuperTrend sobre ATR), no floor pivots. Se corrigió `engine.py`
+(`pivot_point_supertrend()`) y se re-corrió todo el análisis. Los
+resultados de abajo son los correctos; se descartan los de la versión
+anterior de este archivo.
+
+Veredicto CORREGIDO: con el Pivot real (Pivot Point SuperTrend), la
+hipótesis se sostiene con fuerza y de forma MUY consistente entre las
+5 temporalidades -no es "siempre" (100%), pero sí una mayoría clara y
+estable, incluso filtrando breakouts genuinos.
+
+Datos: 5 archivos reales de MNQ (CME) subidos por el usuario -1m, 2m,
+5m, 15m y 240m-, entre unas semanas (1m/2m) y 6.5 años (240m) de
+historial.
+
+Resultado clave (% de flips de AlphaTrend donde el Pivot Point
+SuperTrend vigente en ese momento NUNCA vuelve a ser tocado antes del
+próximo flip):
+
+  min_segment_bars=1  (con ruido/whipsaws):
+    1m 83.6% | 2m 86.6% | 5m 86.0% | 15m 85.5% | 240m 83.3%
+
+  min_segment_bars=5  (sólo breakouts que se sostienen 5+ velas):
+    1m 64.3% | 2m 71.1% | 5m 69.9% | 15m 69.3% | 240m 67.1%
+
+Extremadamente consistente entre timeframes y across 6.5 años de datos
+(240m) -a diferencia del pivot swing genérico (fractal simple, sin la
+mecánica de trailing stop), que da 23-30% en el mismo filtro y por eso
+NO sostiene la hipótesis. La diferencia mecánica clave: el Pivot Point
+SuperTrend, al ser también un trailing stop tipo ratchet sobre ATR (muy
+similar en mecánica al propio AlphaTrend), tiende a moverse EN LA MISMA
+DIRECCIÓN que un breakout de AlphaTrend -cuando el precio se aleja lo
+suficiente para flipear AlphaTrend, generalmente también dejó atrás al
+nivel de Pivot Point SuperTrend vigente. Un floor pivot o un swing
+fractal simple no tienen ese mismo comportamiento de "arrastre".
+
+Conclusión práctica: A DIFERENCIA del hallazgo anterior (con la
+definición equivocada de pivot), ESTE SÍ es un filtro con mérito real:
+"si AlphaTrend flipeó, tratar la señal de Pivot Point SuperTrend previa
+como inválida hasta el próximo flip" acierta ~2 de cada 3 veces (67-71%
+en breakouts genuinos, filtrando ruido) y hasta ~85% si se incluyen
+también los whipsaws cortos. No es una garantía absoluta (queda un
+30-35% de casos donde el pivot sí se vuelve a testear), pero es una
+tasa lo bastante alta y estable entre timeframes como para justificar
+probarlo como filtro real en la estrategia -pendiente: implementarlo y
+correr el backtest completo (con costos, position sizing, etc.) para
+ver el impacto real en profit factor/expectancy, no sólo en frecuencia
+de "kill".
+
+Script: estrategias/mecha_fade/backtest/analyze_alphatrend_kills_pivot.py

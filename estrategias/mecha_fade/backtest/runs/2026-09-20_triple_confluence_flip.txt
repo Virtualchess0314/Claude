@@ -1,0 +1,77 @@
+Idea del usuario: entrar en la vela del flip de AlphaTrend (ya validado)
+exigiendo una confluencia TRIPLE en vez de sólo el color del pivot: que
+además haya una etiqueta de señal del DIY (long/short, la 3ra pata
+original de mecha_fade) y que el Pivot Point SuperTrend TAMBIÉN flipee
+-para ver si esa triple coincidencia predice movimientos grandes.
+
+## ⚠️ Corrección de metodología encontrada ANTES de reportar resultados
+
+El primer chequeo de "el pivot también flipea" miraba velas FUTURAS
+(i+ventana) para decidir si contaba como confluencia en la vela i del
+flip -eso es look-ahead bias: en el momento de entrar no se puede saber
+todavía si el pivot va a flipear en los próximos minutos. Corregido:
+esa métrica queda SÓLO como estadística retrospectiva de la Parte 1
+(marcada explícitamente como no-causal, no usable para operar), y se
+agregó una versión 100% CAUSAL del filtro DIY (mirar sólo velas ya
+cerradas hacia atrás) para la Parte 2 (backtest con plata real).
+
+## Parte 1 (retrospectiva): DIY y AlphaTrend casi nunca coinciden
+
+En las 5 temporalidades, la señal DIY (mecha contra una zona de oferta/
+demanda) en la MISMA vela que el flip de AlphaTrend: **0% en las 5
+temporalidades**. Ampliando a una ventana de 5 velas hacia atrás
+(causal): apenas 2.5-5.5% de los flips tienen un DIY reciente. Son
+señales prácticamente INDEPENDIENTES entre sí -el DIY se basa en zonas
+de swing con su propia lógica (pivotes de `diy_swing_length` velas), no
+tiene relación estructural con el momento exacto en que AlphaTrend
+cambia de pendiente.
+
+  TF     con DIY en ventana de 5 velas
+  1m     5.5%  (11/199)
+  2m     2.5%  (3/122)
+  5m     2.5%  (4/160)
+  15m    4.9%  (6/123)
+  240m   3.1%  (6/196)
+
+La estadística de "pivot también flipea cerca" (⚠️ no causal, sólo
+referencia) da kill rate 94-99% en las 5 temporalidades -pero esto es
+esencialmente el MISMO hallazgo ya conocido de
+runs/2026-09-19_pivot_flip_definition_fix.txt (el pivot confirmando se
+asocia a recorridos grandes), no información nueva -sólo lo redescubre
+con una ventana más chica.
+
+## Parte 2 (backtest real, sólo filtros causales): muestra insuficiente en las 5 temporalidades
+
+Exigir DIY como confluencia adicional (causal, ventana de 5 velas)
+sobre la entrada ya validada (flip + pivot contrario) deja tan pocas
+señales que no se puede sacar ninguna conclusión:
+
+  TF     train_n   test_n
+  1m     10        1
+  2m      2        1
+  5m      3        2
+  15m     4        0
+  240m    2        0
+
+Muy por debajo del mínimo razonable (15 train / 8 test) en TODAS las
+temporalidades. Los números de PF/expectativa que salen (algunos PF=inf
+o expectativas de +1.8R) son ruido puro de 1-4 operaciones, no
+evidencia de nada.
+
+## Conclusión
+
+La idea de la confluencia triple no es viable tal como está planteada:
+el DIY y el flip de AlphaTrend son eventos casi siempre independientes
+(coinciden en ventanas cortas sólo 2.5-5.5% de las veces), así que
+exigir ambos a la vez colapsa la muestra a prácticamente cero en
+cualquier temporalidad disponible. La parte de "el pivot también
+flipea" no se puede usar como filtro de entrada en tiempo real (sería
+mirar el futuro) -su versión causal más cercana (esperar a que el pivot
+confirme antes de entrar, o usarlo como salida) ya se probó por
+separado y no ayudó (ver runs/2026-09-19_pivot_confirmation_entry.txt y
+runs/2026-09-19_pivot_confirms_as_exit.txt). Se cierra esta variante
+sin evidencia -no por falta de ventaja, sino por falta de muestra
+estructural (DIY y AlphaTrend casi nunca coinciden).
+
+Implementación: `analyze_triple_confluence_flip.py`
+    python3 analyze_triple_confluence_flip.py datos.csv --require-diy-window

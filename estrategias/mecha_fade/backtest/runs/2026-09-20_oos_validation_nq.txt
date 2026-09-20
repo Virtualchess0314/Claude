@@ -1,0 +1,88 @@
+Validación out-of-sample real (no sólo train/test del mismo archivo): el
+usuario subió un CSV nuevo de NQ 1m (CME_MINI_NQ1_1.csv, contrato
+full-size, mismo instrumento subyacente que el MNQ usado hasta ahora,
+sólo cambia el multiplicador $/punto) que cubre 2026-09-06 a 2026-09-18
+-una ventana de calendario DISTINTA y posterior a la del archivo MNQ 1m
+usado en todo el análisis anterior (2026-08-23 a 2026-09-04). Es la
+prueba que faltaba: ¿la entrada validada (flip de AlphaTrend + pivot de
+color contrario) sigue funcionando en un período que no se usó para
+elegir ni parámetros ni conclusiones?
+
+Nota técnica: se corrió con `point_value_usd=2.0` (igual que MNQ, no el
+$20/punto real de NQ) para que el sizing por `max_risk_usd` sea
+comparable con todo el análisis anterior -el objetivo es validar la
+señal de PRECIO, no operar el contrato NQ real.
+
+## Resultado: NO se sostiene -mayoría de los combos ya validados falla
+
+Se corrieron los 9 combos de 1m que habían pasado train Y test en el
+archivo MNQ original (runs/2026-09-19_opposite_color_pivot_filter.txt)
+sobre este período nuevo, sin filtro de sesión:
+
+  **Sólo 1 de 9 mantiene PF>1** (sl=3.0, TP=2.0R: PF=1.03, apenas
+  positivo, net=+$257 sobre 100 operaciones -estadísticamente
+  indistinguible de cero).
+
+  **Expectativa promedio de esos 9 combos en este período: -0.116R**
+  (negativa). Los otros 8 van de PF=0.60 a PF=0.93 -todos perdedores.
+
+De hecho, en este período CASI TODOS los combos del barrido completo
+(30 de 1m, filtrados o no por "ya validado") dan PF<1 -no es que los 9
+elegidos sean peores que el resto, es que el período completo es malo
+para esta entrada sin filtro de sesión.
+
+## Con filtro de sesión NY (12-17 ET): mejora, pero cambia el patrón
+
+Con `--entry-start-hour 12 --entry-end-hour 17`: 12/30 combos con
+PF>1 (40%, mejor que sin filtro), pero de los 9 previamente validados
+el resultado es mixto: 3 pasan a PF>1 (1.5/TP3.0 PF=1.30, 3.0/TP1.5
+PF=1.25, 3.0/TP2.0 PF=1.23), los otros 6 siguen en PF<1 -no es un
+rescate limpio, es una mezcla distinta de ganadores y perdedores que la
+del período anterior.
+
+## Desglose por sesión (sl=4.0, TP=1.0 -el combo "campeón" del período anterior)
+
+  Sesión              n   win_rate   PF     expectancy_R
+  Asia (18-03)        28  35.7%      0.49   -0.36   <- ANTES era la 2da mejor (PF 1.62)
+  Londres (03-08)     36  44.4%      0.70   -0.17   <- sigue siendo mala, consistente
+  Londres/NY (08-12)  25  60.0%      1.35   +0.16   <- ahora la MEJOR (antes 3ra)
+  NY (12-17)          22  54.5%      1.42   +0.14   <- sigue siendo buena, pero ya no la única dominante
+
+Sólo Londres (03-08) mantiene el mismo rol (mala) en los dos períodos.
+Asia pasó de ser la 2da mejor sesión a la peor. NY sigue siendo buena
+pero el overlap Londres/NY la empata -ya no hay un "ganador" tan claro
+y aislado como en el período anterior.
+
+## Interpretación
+
+Esto confirma, con datos reales y no sólo con la sospecha ya anotada en
+runs/2026-09-19_opposite_color_pivot_filter.txt y
+runs/2026-09-20_session_winrate_rr_check.txt, que la muestra de 1m
+(sólo ~12 días de calendario por archivo) es DEMASIADO CHICA para fijar
+parámetros con confianza: combos que parecían sólidos (train Y test
+dentro del mismo período de 12 días) pierden su ventaja casi por
+completo al moverse a un período de 12 días distinto, incluso siendo el
+mismo instrumento y fechas consecutivas. La dirección general de "evitar
+Londres, preferir la sesión NY/overlap" sobrevive parcialmente (Londres
+sigue mala en ambos), pero el detalle fino (qué sesión es "la mejor",
+qué combo específico de SL/TP funciona) NO es estable de un período de
+12 días al siguiente.
+
+## Conclusión
+
+Se degrada la confianza en los resultados de 1m de todo lo encontrado
+hasta ahora (opposite_color_pivot_filter, session_winrate_rr_check):
+siguen siendo una dirección de investigación razonable (la lógica de la
+señal -pivot de color contrario- tiene sentido y algo de la estructura
+de sesión persiste), pero NINGÚN combo específico de parámetros (SL,
+TP, ventana horaria) debería tratarse todavía como "la" configuración a
+operar. Antes de operar esto en real hace falta: (a) conseguir varios
+meses de 1m (no 12 días) para poder hacer train/test con muestra de
+calendario real, o (b) aceptar que 1m es demasiado ruidoso para fijar
+parámetros finos y quedarse con temporalidades de más barras por día de
+historia real disponible (5m/15m, que sí cubren 1-5 meses en los
+archivos actuales) aunque den menos señales.
+
+Implementación: mismo `analyze_alphatrend_flip_entry.py`, corrido
+directamente sobre el CSV nuevo (sin split train/test -todo el archivo
+es "test" respecto a los parámetros ya fijados).

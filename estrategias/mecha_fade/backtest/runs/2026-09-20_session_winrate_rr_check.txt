@@ -1,0 +1,124 @@
+Tres preguntas del usuario sobre la entrada ya validada (flip de
+AlphaTrend + pivot de color contrario, runs/2026-09-19_opposite_color_pivot_filter.txt):
+¿se revisó por horario?, ¿cuál es el winrate?, ¿se revisaron ratios
+negativos (R:R < 1)?
+
+## 1) Winrate y distribución win/loss de los 15 combos que pasan
+
+(TRAIN+TEST combinado, misma simulación que ya se usaba)
+
+  TF   SL(xATR)  Salida  n    win_rate  avg_win_R  avg_loss_R  max_DD
+  1m   1.0       TP2.0   170  42.9%     +1.80       -1.20       -$1643
+  1m   1.5       TP1.5   167  48.5%     +1.37       -1.13       -$1511
+  1m   1.5       TP3.0   143  31.5%     +2.74       -1.13       -$2994
+  1m   3.0       TP1.0   131  57.3%     +0.92       -1.03       -$1411
+  1m   3.0       TP1.5   112  47.3%     +1.35       -1.05       -$1533
+  1m   3.0       TP2.0    97  39.2%     +1.79       -1.04       -$1982
+  1m   4.0       TP1.0    97  60.8%     +0.88       -1.03        -$622
+  1m   4.0       TP1.5    80  48.8%     +1.30       -1.03        -$770
+  1m   4.0       TP3.0    61  36.1%     +2.14       -1.06        -$961
+  2m   3.0       TP1.0    41  58.5%     +0.89       -0.88        -$461
+  2m   3.0       TP1.5    39  48.7%     +1.22       -0.85        -$477
+  5m   1.5       TP2.0    97  36.1%     +1.68       -1.02       -$1814
+  5m   3.0       TP1.0    42  57.1%     +0.89       -0.89        -$461
+  5m   3.0       TP1.5    40  47.5%     +1.22       -0.86        -$477
+  15m  1.0       TP3.0    70  30.0%     +2.08       -1.03       -$1262
+
+Nada raro: winrate y R:R se compensan como corresponde (a mayor TP,
+menor winrate). avg_loss_R ligeramente por debajo de -1.0 por
+comisión+slippage (razonable). El mejor combo (1m sl=4.0 TP=1.0) tiene
+winrate 60.8% con R:R 1:1 -exige más del 50% para ganar, y lo cumple
+con margen.
+
+## 2) Ratios R:R por debajo de 1 (TP 0.5R / 0.75R -"ratios negativos")
+
+Se probó TP=0.5R y TP=0.75R (arriesgar más de lo que se busca ganar,
+compensando con mayor winrate esperado) en el mismo barrido de
+sl_atr_mult x 4 temporalidades:
+
+  30 combos con muestra suficiente, **2/30 pasan (6.7%)** -apenas sobre
+  el ~5% esperable por azar, muy por debajo del 15/90 (16.7%) de la
+  entrada ya validada con TP>=1.0R.
+
+Los únicos 2: ambos 1m sl=4.0 (TP=0.5R: train PF=1.04, test PF=1.34;
+TP=0.75R: train PF=1.27, test PF=1.39) -mismo SL grande que ya
+funcionaba con TP=1.0R, apenas mejor con TP más chico pero sin agregar
+nada nuevo. El winrate sí sube fuerte con TP chico (60-73%), pero no
+alcanza para compensar el R:R desfavorable en la mayoría de los casos
+(PF<1 en 28 de 30 combos). Conclusión: los ratios R:R por debajo de 1
+NO mejoran la estrategia -se cierra esta variante, sin evidencia.
+
+## 3) Desglose por sesión horaria (NY) -HALLAZGO FUERTE, no probado antes en esta entrada
+
+Ventanas iguales a runs/2026-09-17_session_performance.txt (mismo
+criterio que ya se usó para la estrategia original mecha_fade):
+Asia 18-03, Londres 03-08, Londres/NY 08-12, NY 12-17.
+
+  1m sl=4.0 TP=1.0 (el mejor combo global):
+    Sesión              n   win_rate   PF     expectancy_R   net_pnl
+    Asia (18-03)        26  61.5%      1.62   +0.17          +$698
+    Londres (03-08)     30  46.7%      0.82   -0.12          -$320
+    Londres/NY (08-12)  19  63.2%      1.52   +0.14          +$422
+    NY (12-17)          22  77.3%      3.55   +0.42          +$1072
+
+  2m sl=3.0 TP=1.0:  NY PF=2.71 (+0.24R) vs Asia PF=0.98 (-0.04R)
+  5m sl=3.0 TP=1.0:  NY PF=2.71 (+0.24R) vs Asia PF=0.98 (-0.04R)
+  15m sl=1.0 TP=3.0: NY PF=2.35 (+0.29R) vs Londres PF=0.64 (-0.40R)
+
+**Consistente en las 4 temporalidades**: la sesión NY (12-17 ET) es
+sistemáticamente la mejor, y Londres (03-08) la peor o directamente
+negativa -exactamente el mismo patrón que ya se había encontrado para
+la estrategia ORIGINAL mecha_fade (runs/2026-09-17_session_performance.txt).
+Tiene sentido: es la ventana de mayor liquidez/participación real en
+futuros de Nasdaq, los flips que ocurren ahí son más "genuinos".
+
+## 4) Filtro real: restringir la entrada a sólo la sesión NY (12-17 ET)
+
+Se agregó soporte de `--entry-start-hour`/`--entry-end-hour` a
+simulate_flip_entries (ya existía en engine.Params/simulate() para la
+estrategia original, no estaba conectado acá). Se repitió el barrido de
+90 combos restringiendo TODAS las entradas a 12:00-17:00 ET:
+
+  **19/40 combos con muestra suficiente pasan (47.5%)** -muy por encima
+  del 15/90 (16.7%) sin restricción horaria.
+
+  TF    con_muestra   pasan
+  1m    28             18  (64%)
+  2m     6              0
+  5m     6              1
+  15m    0              0
+
+Mejores casos (1m, sl=1.5, salida por reversión de nube):
+  train PF=2.12 (n=27, +0.64R)   test PF=2.28 (n=14, +0.64R)
+Incluso el peor de los 18 que pasan en 1m ya es train PF=1.10/test PF=2.03.
+
+⚠️ Con una salvedad importante: restringir a 5 horas/día reduce mucho
+la muestra por operación (test cae a 10-14 operaciones en varios
+combos, apenas sobre el mínimo de 8), y en 2m/5m/15m directamente casi
+no queda muestra evaluable (6, 6 y 0 combos respectivamente). Además,
+el archivo de 1m sólo cubre ~12 días de calendario (2026-08-23 a
+2026-09-04) -aunque de ahí salen 170+ operaciones (mucha frecuencia
+intradía), es UNA SOLA ventana temporal corta, no varios períodos de
+mercado distintos. La mejora es demasiado grande (16.7% -> 47.5%) como
+para no sospechar de sobreajuste con esta muestra -antes de confiar en
+esto hace falta más historial de 1m (semanas/meses, no días) que
+todavía muestre la misma ventaja en la sesión NY.
+
+## Conclusión
+
+- Winrate: 30-61% según el TP usado, coherente con el R:R de cada
+  combo -sin sorpresas.
+- Ratios R:R < 1 (TP 0.5-0.75R): NO ayudan (2/30, cerca del azar).
+- Filtro de sesión NY (12-17 ET): la dirección del efecto es sólida y
+  consistente con el hallazgo ya conocido de la estrategia original
+  (misma sesión, mismo patrón) en las 4 temporalidades -pero el salto
+  de pass rate (16.7% -> 47.5%) descansa en muy poca muestra de
+  calendario en 1m (12 días) y casi desaparece en 2m/5m/15m. Se marca
+  como HALLAZGO PROMETEDOR PERO NO CONFIRMADO -recomendado: conseguir
+  más meses de datos de 1m/2m/5m con esta restricción horaria antes de
+  tratarlo como mejora real (mismo pendiente que ya señalaba el README
+  para toda la línea de investigación: ampliar muestra).
+
+Implementación: `--entry-start-hour`/`--entry-end-hour` en
+analyze_alphatrend_flip_entry.py (ya soportado por engine.Params,
+antes sin conectar en simulate_flip_entries).

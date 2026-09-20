@@ -1,0 +1,33 @@
+El usuario pidió buscar una estrategia "que vi de un trader": acumulación
+previa a la apertura de las sesiones, esperar la ruptura del rango y
+seguir el movimiento haciendo promediadas, invalidando la ruptura si
+ocurre antes de que abra la sesión, con RR 1:4 en total y el SL
+ajustándose en cada promediada para arriesgar siempre lo mismo.
+
+Se buscó en la web (en español e inglés) combinando los términos:
+acumulación/rango antes de apertura de sesión, ruptura, promediar
+posición, RR 1:4, "session range breakout", "scale in", "averaging
+position", "risk reward 1:4".
+
+No se encontró una estrategia específica con nombre propio o de un
+trader identificable que combine TODOS los elementos exactos descritos.
+Lo más cercano indexado es el concepto genérico de "Opening Range
+Breakout" (ORB) -acumulación antes/al inicio de una sesión + ruptura del
+rango-, pero:
+  - La literatura de ORB estándar generalmente ADVIERTE en contra de
+    promediar/agregar posiciones ("avoid averaging down"), al revés de
+    la regla que describió el usuario (que sí promedia, ajustando el
+    SL para mantener el riesgo constante -una variante de pyramiding
+    con gestión de riesgo, no "promediar en contra").
+  - Los ratios R:R típicos en fuentes de ORB son 1:1.5 a 1:3, RR 1:4 se
+    menciona pero no como estándar.
+  - No apareció ninguna fuente que mencione la regla específica de
+    "inválido si rompe antes de que abra la sesión".
+
+Conclusión: parece ser una variante/combinación personal de conceptos
+conocidos (ORB + pyramiding con riesgo constante), posiblemente de un
+video, curso o comunidad privada no indexada, no una estrategia
+publicada con nombre propio. Se decidió (con el usuario) formalizarla e
+implementarla directamente a partir de su descripción en vez de seguir
+buscando la fuente exacta -ver README.md y engine.py para la
+implementación y los supuestos documentados que hicieron falta.
