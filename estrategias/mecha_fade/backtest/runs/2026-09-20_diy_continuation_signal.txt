@@ -1,0 +1,74 @@
+Aclaración del usuario sobre la confluencia triple (ver
+runs/2026-09-20_triple_confluence_flip.txt, donde el DIY casi nunca
+coincide con la vela del flip): el DIY no es para la entrada -es una
+señal que puede aparecer DESPUÉS, durante el movimiento (mismo lado:
+short para el caso bajista, long para el alcista), y la pregunta es si
+sirve para decidir si SEGUIR montado en la posición o no.
+
+Se midió, sobre los tramos con pivot de color contrario al flip (filtro
+ya validado): separar por (el pivot terminó confirmando -"killed"- sí/no)
+x (apareció una etiqueta DIY del mismo lado en algún momento del tramo
+sí/no), y sobre todo: cuando aparece la etiqueta DIY, ¿cuánto recorrido
+queda TODAVÍA por delante en ese momento?
+
+## Resultado 1: dentro de los tramos "killed" (pivot confirma), el DIY se asocia a un MFE total AÚN MÁS GRANDE
+
+  TF     killed+DIY (n, MFE mediana R)   killed sin DIY (n, MFE mediana R)
+  1m     31, 6.11                         114, 4.31
+  2m     13, 8.39                          63, 4.76
+  5m     17, 6.98                          86, 4.50
+  15m    16, 8.18                          65, 4.58
+  240m   13, 3.70                         117, 4.61  (única excepción, n chico)
+
+Consistente en 4 de 5 temporalidades: cuando la etiqueta DIY aparece en
+un tramo que además el pivot confirmó, el recorrido TOTAL del tramo
+tiende a ser mayor. Esto sugiere que la etiqueta SÍ es un buen
+indicador de que "este es un movimiento grande" -pero la pregunta del
+usuario es más específica: ¿sirve para decidir seguir montado EN ESE
+MOMENTO, o el movimiento grande ya pasó para cuando aparece?
+
+## Resultado 2 (el más importante): quedaba muy poco o nada de recorrido cuando aparece la etiqueta
+
+  TF     offset mediana desde el flip (velas)   % del MFE que todavía faltaba (mediana)
+  1m     39.5                                    0.0%
+  2m     35.0                                    17.3%
+  5m     38.5                                    10.4%
+  15m    25.5                                    0.0%
+  240m   35.0                                    0.0%
+
+En 3 de 5 temporalidades (1m, 15m, 240m), la mediana de "cuánto quedaba
+por delante cuando aparece la etiqueta DIY" es **0%** -es decir, en la
+MITAD o más de los casos, el precio YA HABÍA HECHO SU MÁXIMO FAVORABLE
+antes de que apareciera la etiqueta, y desde ahí no hizo ningún nuevo
+extremo mejor. En 2m y 5m es apenas mejor (10-17% de recorrido
+adicional en la mediana). El offset mediano desde el flip es de 25-40
+velas -bastante tarde dentro de un tramo que típicamente dura 30-40
+velas en total (ver runs/2026-09-19_pivot_flip_definition_fix.txt):
+la etiqueta DIY tiende a aparecer cerca del FINAL del movimiento, no
+en la mitad.
+
+## Interpretación
+
+Tiene sentido con cómo está construido el DIY: se basa en zonas de
+oferta/demanda ancladas a pivotes de swing (`diy_swing_length=10`
+velas, necesita confirmación de AMBOS lados del swing) -por diseño, es
+un indicador con retraso estructural. Para cuando confirma una zona y
+el precio la testea con una mecha, el movimiento que la originó ya
+avanzó bastante, y en la mayoría de los casos ya terminó.
+
+## Conclusión: no sirve como señal de "seguir montado", tal como se pidió
+
+Respondiendo directamente la pregunta del usuario: **no, la etiqueta
+DIY no sirve bien para decidir si seguir en el movimiento o no**,
+porque quedaba en la mediana LITERALMENTE 0% de recorrido adicional en
+3 de las 5 temporalidades cuando aparece. Si acaso, es un indicador
+retrospectivo de "esto FUE un movimiento grande" (Resultado 1), no un
+indicador prospectivo de "todavía queda movimiento por delante"
+(Resultado 2) -que es justo lo que se necesitaría para que sirviera
+como señal de gestión de una posición abierta.
+
+No se recomienda usar la aparición de una etiqueta DIY del mismo lado
+como criterio para mantener una posición abierta más allá de la salida
+ya validada (TP fijo o reversión de la nube de AlphaTrend).
+
+Implementación: `analyze_diy_continuation_signal.py`

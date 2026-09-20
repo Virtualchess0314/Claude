@@ -502,6 +502,23 @@ detectó el nivel. Ver `runs/2026-09-20_regime_aligned_wick_fade.txt`.
   del mínimo para sacar conclusiones. Cerrado por falta de muestra
   estructural, no por falta de ventaja. Ver
   `runs/2026-09-20_triple_confluence_flip.txt`.
+- **⚠️ DIY como señal de "seguir montado" (aparece DESPUÉS del flip, no
+  en la entrada) — CERRADO, no sirve para ese propósito.** Aclaración
+  del usuario: el DIY no es para entrar, es una etiqueta que puede
+  aparecer durante el movimiento (mismo lado que el flip) para decidir
+  si mantener la posición. Medido en los tramos donde el pivot confirma
+  ("killed"): cuando aparece el DIY, el MFE TOTAL del tramo tiende a ser
+  mayor (consistente en 4 de 5 TFs) -pero el dato clave es OTRO: en el
+  momento en que la etiqueta aparece, ya no queda casi nada de recorrido
+  por capturar. En 1m/15m/240m la mediana de "cuánto faltaba" es
+  **0%** -el precio ya había hecho su máximo favorable antes de que
+  apareciera la etiqueta; en 2m/5m apenas 10-17%. El DIY, por cómo está
+  construido (zonas ancladas a pivotes de swing que necesitan
+  confirmarse de ambos lados), es estructuralmente TARDÍO -confirma
+  cerca del final del movimiento, no en la mitad. No sirve como señal
+  prospectiva de gestión ("¿sigo montado?"), sólo como confirmación
+  retrospectiva de que el tramo fue grande. Ver
+  `runs/2026-09-20_diy_continuation_signal.txt`.
 
 ## Qué mirar en el resultado
 
