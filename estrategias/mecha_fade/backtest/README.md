@@ -519,6 +519,23 @@ detectó el nivel. Ver `runs/2026-09-20_regime_aligned_wick_fade.txt`.
   prospectiva de gestión ("¿sigo montado?"), sólo como confirmación
   retrospectiva de que el tramo fue grande. Ver
   `runs/2026-09-20_diy_continuation_signal.txt`.
+- **🏆 Validación en ORO (COMEX GC), primer activo distinto a Nasdaq —
+  generaliza, y más fuerte.** Mismo mecanismo (flip de AlphaTrend +
+  pivot de color contrario) probado en oro, 5 temporalidades
+  ($100/punto, tick 0.10). Baseline sin filtro CRT: **32/90 combos
+  pasan (35.6%)**, muy por encima del ~16.7% visto en Nasdaq, repartido
+  en las 5 TFs (15m: 6/6, el 100% de lo probado). El filtro CRT-exclude
+  (el mejor hallazgo en Nasdaq) **no generaliza** -empeora el resultado
+  en oro (9/78, 11.5%), no usarlo acá. Chequeo de robustez por dirección
+  (lección de `alpha_edge_ma_cross`): de los 32 que pasan, **21 (65.6%)
+  tienen AMBAS direcciones (long y short) con expectativa positiva por
+  separado** -no es un lado arrastrando al otro. Es la primera evidencia
+  de generalización entre activos de todo el proyecto: el mecanismo de
+  fondo (pivot todavía sin confirmar = tendencia nueva genuina) parece
+  una regularidad real de mercado, no un artefacto de Nasdaq. Misma
+  cautela de siempre por calendario corto (11-149 días según TF) y sin
+  segundo archivo de oro para validar out-of-sample. Ver
+  `runs/2026-09-20_gold_gc_validation.txt`.
 
 ## Qué mirar en el resultado
 

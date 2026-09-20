@@ -1,0 +1,87 @@
+Primera prueba de la estrategia (flip de AlphaTrend + pivot de color
+contrario) en un activo DISTINTO a los futuros de Nasdaq usados en todo
+el proyecto hasta ahora: oro (COMEX GC), 5 temporalidades (1m/2m/3m/5m/
+15m), point_value_usd=100.0 y tick_size=0.10 (contrato full-size GC:
+$0.10/tick, $10/tick, $100/punto).
+
+Días de calendario por archivo (mismo patrón de muestra corta ya
+conocido del proyecto): 1m=11, 2m=18, 3m=32, 5m=53, 15m=149.
+
+## Resultado baseline (sin filtro CRT): mucho más fuerte que en Nasdaq
+
+Barrido completo (5 sl_atr_mult x 6 salidas, 90 combos con muestra
+suficiente):
+
+  **32/90 combos pasan train_pf>1 y test_pf>1 (35.6%)** -muy por
+  encima del ~16.7% ya visto en Nasdaq con el mismo filtro, y repartido
+  en las 5 temporalidades:
+
+  TF     combos con muestra   pasan
+  1m     30                    6
+  2m     24                   12
+  3m     18                    1
+  5m     12                    7
+  15m     6                    6  (100% -TODAS las combinaciones probadas pasan)
+
+Mejores casos: 2m sl=3.0 tp=5.0 (test PF=8.09, n=10, +2.11R),
+15m sl=1.0 tp=3.0 (train PF=1.71 n=20, test PF=3.72 n=9, +1.01R).
+
+## ⚠️ El filtro CRT-exclude (el mejor hallazgo en Nasdaq) acá NO ayuda
+
+Al revés que en Nasdaq (donde subía el pass rate de 10.9% a 24.6%),
+en oro el filtro CRT-exclude EMPEORA el resultado: 9/78 pasan (11.5%,
+peor que el 35.6% del baseline). No todos los filtros generalizan entre
+activos -se probó igual porque ya estaba implementado, pero no se
+recomienda usarlo en oro.
+
+## Chequeo de robustez: ¿el "pase" agregado es real o un espejismo de un solo lado?
+
+Aprendida la lección de runs/2026-09-20_alpha_edge_ma_cross.txt (un
+resultado agregado puede esconder un lado negativo), se separaron los
+32 combos que pasan por dirección (long/short) y se midió si AMBAS
+tienen expectativa positiva por separado:
+
+  **21 de 32 combos (65.6%) tienen AMBAS direcciones con expectativa
+  positiva** -no es sólo un lado arrastrando al otro. Repartido en las
+  5 temporalidades:
+
+  TF     pasan (agregado)   de esos, ambas direcciones positivas
+  1m     6                   4
+  2m     12                  10
+  3m     1                   1
+  5m     7                   2
+  15m    6                   4
+
+Ejemplo robusto (15m, sl=1.0, tp=3.0): long n=8 (+1.21R), short n=21
+(+0.29R) -ambos positivos, aunque la muestra del lado long es chica.
+Ejemplos de "pase" NO robusto (descartados): 5m sl=1.0 con varias
+salidas, donde el lado short es NEGATIVO (-0.20R a -0.27R) y sólo el
+lado long (fuerte, +0.46R a +0.79R) sostiene el agregado.
+
+## Interpretación
+
+Esta es la primera evidencia de GENERALIZACIÓN entre activos de toda la
+sesión: el mecanismo central (entrar al flip de AlphaTrend cuando el
+Pivot Point SuperTrend todavía es del color viejo) muestra ventaja real
+también en oro, no sólo en futuros de Nasdaq -con una tasa de éxito
+incluso más alta (21/90 con el filtro estricto de ambas direcciones,
+23.3%, vs lo ya visto en Nasdaq). Esto es un apoyo importante a la idea
+de que el mecanismo de fondo (pivot todavía no confirmado = tendencia
+nueva y genuina) es una regularidad de mercado real, no un artefacto
+específico de un instrumento.
+
+⚠️ Misma cautela de siempre: muestras de calendario cortas (11-149
+días según TF), y no hay un segundo archivo de oro para validar
+out-of-sample como se hizo con NQ en Nasdaq (runs/2026-09-20_oos_validation_nq.txt)
+-antes de operar esto en real, igual que con Nasdaq, haría falta más
+historia (ideal: exportar más meses/años desde ATAS, ver conversación
+sobre exportar datos de ATAS).
+
+## Conclusión
+
+El resultado en oro es, en general, más fuerte y mejor repartido que en
+Nasdaq -pero el filtro CRT-exclude no generaliza (no usarlo acá), y
+sigue aplicando la misma disciplina de todo el proyecto: preferir 15m
+(más calendario, 100% de combos pasan con ambas direcciones
+mayormente robustas) sobre 1m/2m/3m para cualquier decisión con más
+peso.
