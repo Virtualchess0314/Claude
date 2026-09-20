@@ -1,0 +1,77 @@
+Idea del usuario: cuando el AlphaTrend está por cambiar, las 3 medias
+(interpretado como SMA 10/20/50 -typo "10-2059" en el pedido original)
+se alinean en el orden de la nueva tendencia y el precio cierra una
+vela por encima (o debajo) de las 3, y RECIÉN DESPUÉS el AlphaTrend
+termina flipeando. Probar entrar en ESA vela (la del cierre más allá de
+las 3 medias alineadas) en vez de esperar la vela del flip, con el SL
+apoyado debajo/encima de las 3 medias -sería una entrada más temprana,
+capturando más del movimiento.
+
+## Parte 1: ¿la señal REALMENTE anticipa el flip? NO, en la gran mayoría de los casos
+
+Se midió, para cada señal de alineación+cierre, si el AlphaTrend
+flipea a favor DESPUÉS (barras>0), en la MISMA vela (barras=0), o nunca
+dentro de una ventana de 20 velas -en las 5 temporalidades:
+
+  TF     % que SÍ flipea en <=20 velas   mediana barras hasta el flip   % que REALMENTE anticipan (barras>0)
+  1m     97.6%                            0                              6.1%
+  2m     97.9%                            0                              7.8%
+  5m     98.1%                            0                              6.5%
+  15m    98.2%                            0                              4.9%
+  240m   98.7%                            0                              4.1%
+
+Casi siempre (92-96% de los casos) el AlphaTrend YA HABÍA FLIPEADO en
+la misma vela donde se detecta la alineación de medias, o antes -no
+después. La premisa de "las medias se alinean y DESPUÉS flipea el
+Alpha" no se sostiene como anticipación real: es prácticamente
+simultánea, y muy pocas veces (4-8%) la señal de medias llega antes.
+
+Explicación de mecánica: el AlphaTrend (ratchet sobre ATR/RSI, banda
+muy pegada al precio) es estructuralmente MÁS reactivo que 3 SMAs -en
+particular la de 50 períodos, bastante más lenta-, así que para cuando
+el precio logra ordenar y superar las 3 medias, el indicador más rápido
+(AlphaTrend) casi siempre ya cambió de color primero.
+
+## Parte 2: como entrada ALTERNATIVA (no "más temprana"), sí aporta algo -sobre todo en 240m
+
+Aunque no anticipa el flip, es una señal DISTINTA con un SL distinto
+(apoyado en las medias, típicamente más ancho que el ATR puro). Se
+backtesteó como entrada real (con el filtro de color de pivot ya
+validado), barrido sl_buffer_atr (0.1/0.25/0.5) x tp_r_mult
+(1/1.5/2/3) + salida por reversión de régimen, en las 5 temporalidades:
+
+  TF     combos con muestra   pasan train_pf>1 y test_pf>1
+  1m     15                    0
+  2m     15                    6
+  5m     15                    5
+  15m    15                    0
+  240m   15                   **11 (73.3%)**
+
+**240m es un resultado notablemente fuerte**: 11 de 15 combos pasan,
+con test PF de hasta 2.63 y expectativa de hasta +0.52R/operación
+(sl_buffer_atr=0.10, tp_r_mult=3.0: train PF=1.21 n=25 +0.06R, test
+PF=2.63 n=11 +0.52R). Consistente en casi todos los sl_buffer/tp
+probados -no un único pico aislado. 2m y 5m también aportan (6/15 y
+5/15), 1m y 15m no dan nada.
+
+⚠️ Muestras chicas (train 23-30, test 10-22 en 240m) -mismo orden de
+magnitud que otros hallazgos de este proyecto, no alcanza el volumen de
+la entrada original al flip (train/test de 90-138). No se pudo validar
+out-of-sample con el archivo NQ (sólo tiene 1m, resampleado a 240m da
+apenas ~36 velas -insuficiente para siquiera calcular una SMA de 50).
+
+## Conclusión
+
+La premisa literal del usuario ("las medias anticipan el flip") no se
+sostiene -es casi siempre simultánea o posterior, no antes-, pero la
+idea de fondo (usar el cruce/orden de las 3 medias como una señal
+ALTERNATIVA de entrada, con SL apoyado en ellas) sí aporta algo cuando
+se combina con el filtro de pivot ya validado: 22/75 combos pasan
+(29.3%), con el resultado más fuerte y consistente en 240m (73%,
+sobre 6.5 años de historia). No reemplaza a la entrada ya validada
+(flip crudo + pivot contrario), pero es una variante que vale la pena
+tener en el radar, sobre todo en 240m -sujeta a la misma cautela de
+muestra chica del resto del proyecto.
+
+Implementación: `analyze_ma_alignment_early_entry.py`
+    python3 analyze_ma_alignment_early_entry.py datos.csv --require-opposite-color-pivot --sl-buffer-atr 0.10 --tp-r-mult 3.0

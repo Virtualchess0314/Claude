@@ -456,6 +456,25 @@ MISMO evento identificado como la mejor señal del proyecto
 separa una mecha ganadora de una perdedora es la alineación con un
 cambio de régimen genuino y reciente, no el indicador específico que
 detectó el nivel. Ver `runs/2026-09-20_regime_aligned_wick_fade.txt`.
+- **Alineación de 3 medias (SMA 10/20/50) como entrada temprana —
+  la premisa NO se sostiene, pero la variante aporta en 240m.** Idea del
+  usuario: cuando el AlphaTrend está por cambiar, las 3 medias se
+  alinean y el precio cierra por encima/debajo de las 3 ANTES de que
+  flipee el AlphaTrend -entrar ahí en vez de esperar el flip. Medido
+  directamente: **NO anticipa nada** -en 92-96% de los casos el
+  AlphaTrend ya había flipeado en la misma vela de la señal de medias o
+  antes (sólo 4-8% de las veces la señal realmente llega primero); tiene
+  sentido, el AlphaTrend (ratchet sobre ATR/RSI) es estructuralmente más
+  rápido que una SMA de 50. Igual, probada como entrada ALTERNATIVA
+  (SL apoyado en las 3 medias en vez de en ATR puro) con el filtro de
+  pivot ya validado: 22/75 combos pasan (29.3%), con **240m
+  especialmente fuerte (11/15, 73%, test PF hasta 2.63, hasta
+  +0.52R/operación)** -consistente en casi todos los sl_buffer/tp
+  probados, aunque sobre muestra chica (10-25 operaciones por lado) y
+  sin poder validarse out-of-sample (el archivo NQ sólo tiene 1m, muy
+  poco para resamplear a 240m). No reemplaza la entrada ya validada,
+  pero es una variante a tener en el radar. Ver
+  `runs/2026-09-20_ma_alignment_early_entry.txt`.
 
 ## Qué mirar en el resultado
 
