@@ -490,6 +490,18 @@ detectó el nivel. Ver `runs/2026-09-20_regime_aligned_wick_fade.txt`.
   ATR contra la línea de AlphaTrend) no discriminó nada en la práctica
   -la línea siempre está cerca del precio por diseño (ratchet de ATR).
   Ver `runs/2026-09-20_alpha_edge_ma_cross.txt`.
+- **⚠️ Confluencia triple (flip + DIY + pivot también flipea) — CERRADO,
+  muestra insuficiente en las 5 temporalidades.** Se encontró y corrigió
+  un look-ahead bias propio antes de reportar (el chequeo de "el pivot
+  también flipea" miraba velas futuras -quedó marcado como sólo
+  retrospectivo, no usable para operar). Con la versión 100% causal: el
+  DIY y el flip de AlphaTrend son casi siempre INDEPENDIENTES -0% de
+  coincidencia en la misma vela, sólo 2.5-5.5% en una ventana de 5 velas,
+  en las 5 temporalidades. Exigir ambos a la vez colapsa la muestra a
+  1-10 operaciones por lado en TODAS las temporalidades -muy por debajo
+  del mínimo para sacar conclusiones. Cerrado por falta de muestra
+  estructural, no por falta de ventaja. Ver
+  `runs/2026-09-20_triple_confluence_flip.txt`.
 
 ## Qué mirar en el resultado
 
